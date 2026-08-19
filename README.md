@@ -2,7 +2,7 @@
 
 Interactive Black-Scholes-Merton European options dashboard for pricing, Greeks, and input sensitivity analysis.
 
-**Live demo:** (deploying…)
+**Live demo:** [https://dashbsmcomp.vercel.app](https://dashbsmcomp.vercel.app)
 
 ## Features
 
