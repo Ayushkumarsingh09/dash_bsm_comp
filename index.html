@@ -1,0 +1,2197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>BSM Greek Sensitivity Lab</title>
+<script>
+window.CDN_STATUS = { chartjs: false, mathjax: false };
+</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"
+  onload="window.CDN_STATUS.chartjs=true"
+  onerror="console.warn('Chart.js CDN failed')"></script>
+<script>
+window.MathJax = { tex: { inlineMath: [['$','$'],['\\(','\\)']] }, svg: { fontCache: 'global' } };
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async
+  onload="window.CDN_STATUS.mathjax=true"
+  onerror="console.warn('MathJax CDN failed')"></script>
+<style>
+:root {
+  --bg: #0b0e14;
+  --bg2: #12161f;
+  --bg3: #1a2030;
+  --bg4: #222a3a;
+  --border: #2a3344;
+  --border2: #3a4558;
+  --text: #e6edf7;
+  --muted: #8b95a8;
+  --accent: #3d9cf0;
+  --accent2: #2dd4bf;
+  --up: #22c55e;
+  --down: #ef4444;
+  --flat: #94a3b8;
+  --cond: #f59e0b;
+  --warn: #f97316;
+  --pass: #22c55e;
+  --fail: #ef4444;
+  --font: "Segoe UI", "IBM Plex Sans", system-ui, sans-serif;
+  --mono: "Cascadia Code", "Consolas", "SF Mono", monospace;
+  --radius: 6px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.45;
+  font-size: 13px;
+}
+a { color: var(--accent); }
+button, input, select { font: inherit; color: inherit; }
+.app-header {
+  position: sticky; top: 0; z-index: 100;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  padding: 10px 16px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+}
+.brand { font-weight: 700; letter-spacing: 0.04em; font-size: 15px; }
+.brand span { color: var(--accent2); }
+.nav { display: flex; flex-wrap: wrap; gap: 6px; }
+.nav button {
+  background: transparent; border: 1px solid var(--border);
+  padding: 6px 12px; border-radius: var(--radius); cursor: pointer;
+  color: var(--muted);
+}
+.nav button.active, .nav button:hover {
+  background: var(--bg4); color: var(--text); border-color: var(--border2);
+}
+.status-pill {
+  margin-left: auto; padding: 4px 10px; border-radius: 999px;
+  border: 1px solid var(--border); font-size: 11px; font-family: var(--mono);
+}
+.status-pill.ok { color: var(--pass); border-color: #166534; background: #052e16; }
+.status-pill.warn { color: var(--warn); border-color: #9a3412; background: #431407; }
+.page { display: none; padding: 16px; max-width: 1600px; margin: 0 auto; }
+.page.active { display: block; }
+.grid { display: grid; gap: 12px; }
+.grid-2 { grid-template-columns: 320px 1fr; }
+.grid-3 { grid-template-columns: repeat(3, 1fr); }
+.grid-4 { grid-template-columns: repeat(4, 1fr); }
+.grid-6 { grid-template-columns: repeat(6, 1fr); }
+.grid-7 { grid-template-columns: repeat(7, 1fr); }
+@media (max-width: 1100px) {
+  .grid-2 { grid-template-columns: 1fr; }
+  .grid-3, .grid-4, .grid-6, .grid-7 { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 640px) {
+  .grid-3, .grid-4, .grid-6, .grid-7 { grid-template-columns: 1fr; }
+}
+.card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 12px;
+}
+.card h2, .card h3 {
+  font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--muted); margin-bottom: 10px; font-weight: 600;
+}
+.card h2 { font-size: 13px; color: var(--text); }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.field { display: flex; flex-direction: column; gap: 3px; min-width: 90px; flex: 1; }
+.field label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.field input, .field select {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
+  padding: 6px 8px; font-family: var(--mono);
+}
+.field input:focus, .field select:focus { outline: 1px solid var(--accent); }
+.btn {
+  background: var(--bg4); border: 1px solid var(--border2);
+  padding: 6px 10px; border-radius: 4px; cursor: pointer; color: var(--text);
+}
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: #1e3a5f; border-color: var(--accent); }
+.btn.sm { padding: 4px 8px; font-size: 11px; }
+.btn.toggle.active { background: #134e4a; border-color: var(--accent2); color: #ccfbf1; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+.seg button {
+  background: transparent; border: none; padding: 6px 12px; cursor: pointer; color: var(--muted);
+}
+.seg button.active { background: var(--bg4); color: var(--text); }
+.metric-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; }
+.metric {
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 4px;
+  padding: 8px; position: relative; cursor: help;
+}
+.metric .name { font-size: 10px; color: var(--muted); text-transform: uppercase; }
+.metric .val { font-family: var(--mono); font-size: 14px; margin-top: 2px; }
+.metric .unit { font-size: 9px; color: var(--muted); }
+.tip {
+  display: none; position: absolute; z-index: 50; left: 0; top: 100%;
+  width: 280px; background: #0f172a; border: 1px solid var(--border2);
+  padding: 10px; border-radius: 4px; font-size: 11px; color: var(--text);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5); pointer-events: none;
+}
+.metric:hover .tip, .has-tip:hover .tip { display: block; }
+.regime-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+@media (max-width: 900px) { .regime-grid { grid-template-columns: repeat(2, 1fr); } }
+.regime {
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 4px;
+  padding: 8px 6px; text-align: center; cursor: pointer; font-size: 10px;
+}
+.regime:hover, .regime.active { border-color: var(--accent); background: #152033; }
+.regime .rn { font-weight: 700; color: var(--text); display: block; margin-bottom: 2px; }
+.chart-wrap { position: relative; height: 320px; }
+.chart-wrap.tall { height: 400px; }
+.heatmap-wrap { overflow: auto; }
+#heatmapCanvas, #surfaceCanvas { display: block; max-width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; }
+.table-scroll { overflow: auto; max-width: 100%; border: 1px solid var(--border); border-radius: 4px; }
+table.matrix {
+  border-collapse: separate; border-spacing: 0; width: max-content; min-width: 100%;
+  font-family: var(--mono); font-size: 11px;
+}
+table.matrix th, table.matrix td {
+  border-bottom: 1px solid var(--border); border-right: 1px solid var(--border);
+  padding: 6px 8px; text-align: center; white-space: nowrap; background: var(--bg2);
+}
+table.matrix thead th {
+  position: sticky; top: 0; z-index: 2; background: var(--bg3);
+  font-size: 10px; text-transform: uppercase; color: var(--muted);
+}
+table.matrix th.sticky, table.matrix td.sticky {
+  position: sticky; left: 0; z-index: 1; background: var(--bg3); text-align: left;
+}
+table.matrix thead th.sticky { z-index: 3; }
+table.matrix td.cell { cursor: pointer; }
+table.matrix td.cell:hover { background: var(--bg4); }
+.arrow-up { color: var(--up); }
+.arrow-down { color: var(--down); }
+.arrow-flat { color: var(--flat); }
+.arrow-cond { color: var(--cond); }
+.footnote {
+  margin-top: 8px; font-size: 11px; color: var(--muted); font-style: italic;
+  border-left: 2px solid var(--border2); padding-left: 8px;
+}
+.validation-list { font-family: var(--mono); font-size: 12px; }
+.validation-list .pass { color: var(--pass); }
+.validation-list .fail { color: var(--fail); }
+.validation-list .warn { color: var(--warn); }
+.detail-panel {
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 4px;
+  padding: 12px; min-height: 120px; font-size: 12px;
+}
+.detail-panel pre { font-family: var(--mono); white-space: pre-wrap; margin-top: 6px; }
+.warn-box {
+  background: #431407; border: 1px solid #9a3412; color: #fed7aa;
+  padding: 8px; border-radius: 4px; margin: 8px 0; font-size: 12px; display: none;
+}
+.warn-box.show { display: block; }
+.badge {
+  display: inline-block; padding: 1px 6px; border-radius: 3px;
+  font-size: 10px; border: 1px solid var(--border);
+}
+.badge.universal { color: var(--pass); }
+.badge.typical { color: var(--accent); }
+.badge.conditional { color: var(--cond); }
+.section { margin-top: 16px; }
+.tabs-mini { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
+.muted { color: var(--muted); }
+.mono { font-family: var(--mono); }
+.checkbox-row label { display: inline-flex; align-items: center; gap: 4px; margin-right: 10px; cursor: pointer; }
+hr.sep { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+.about p, .core-intuition p { margin-bottom: 8px; color: #cbd5e1; }
+.core-intuition dl { display: grid; grid-template-columns: 100px 1fr; gap: 6px 12px; }
+.core-intuition dt { color: var(--accent2); font-weight: 600; }
+.core-intuition dd { color: var(--muted); }
+</style>
+</head>
+<body>
+<header class="app-header">
+  <div class="brand">BSM <span>SENSITIVITY LAB</span></div>
+  <nav class="nav" id="mainNav">
+    <button data-page="lab" class="active">Sensitivity Lab</button>
+    <button data-page="matrix">Relationship Matrix</button>
+    <button data-page="validation">Validation</button>
+    <button data-page="about">About BSM</button>
+  </nav>
+  <div class="status-pill warn" id="modelStatus">Model Status: …</div>
+</header>
+
+<div id="warnGlobal" class="warn-box" style="margin: 8px 16px;"></div>
+
+<!-- ===================== PAGE: LAB ===================== -->
+<section class="page active" id="page-lab">
+  <div class="grid grid-2">
+    <div class="card" id="paramPanel">
+      <h2>Parameter Control</h2>
+      <div class="row" style="margin-bottom:8px;">
+        <div class="seg" id="optTypeSeg">
+          <button data-type="call" class="active">Call</button>
+          <button data-type="put">Put</button>
+        </div>
+        <div class="seg" id="dayCountSeg">
+          <button data-dc="365" class="active">ACT/365</button>
+          <button data-dc="252">ACT/252</button>
+        </div>
+      </div>
+      <div class="grid" style="grid-template-columns:1fr 1fr; gap:8px;">
+        <div class="field"><label>Spot S</label><input type="number" id="inpS" value="100" step="0.01" min="0.0001"></div>
+        <div class="field"><label>Strike K</label><input type="number" id="inpK" value="100" step="0.01" min="0.0001"></div>
+        <div class="field"><label>Volatility σ</label><input type="number" id="inpSigma" value="0.20" step="0.01" min="0.0001"></div>
+        <div class="field"><label>Time T (years)</label><input type="number" id="inpT" value="0.08219178" step="0.001" min="0.0001"></div>
+        <div class="field"><label>Rate r</label><input type="number" id="inpR" value="0.05" step="0.001"></div>
+        <div class="field"><label>Dividend q</label><input type="number" id="inpQ" value="0" step="0.001"></div>
+        <div class="field"><label>Expiry date</label><input type="date" id="inpExpiry"></div>
+        <div class="field"><label>Days → T</label><input type="number" id="inpDays" value="30" step="1" min="1"></div>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <div class="seg" id="unitSeg">
+          <button data-unit="unit" class="active">Per Unit</button>
+          <button data-unit="pct">Per 1%</button>
+        </div>
+        <div class="seg" id="thetaSeg">
+          <button data-theta="year" class="active">Θ Annual</button>
+          <button data-theta="day">Θ Daily</button>
+        </div>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <button class="btn sm" id="btnApplyExpiry">Apply Expiry→T</button>
+        <button class="btn sm" id="btnExportCSV">Export CSV</button>
+        <button class="btn sm" id="btnExportJSON">Export JSON</button>
+        <button class="btn sm" id="btnPrint">Print</button>
+      </div>
+      <hr class="sep">
+      <h3>Moneyness Thresholds (|ln(F/K)|)</h3>
+      <div class="grid" style="grid-template-columns:1fr 1fr 1fr;gap:8px;">
+        <div class="field"><label>ATM band</label><input type="number" id="thAtm" value="0.02" step="0.005" min="0.001"></div>
+        <div class="field"><label>Deep</label><input type="number" id="thDeep" value="0.10" step="0.01" min="0.01"></div>
+        <div class="field"><label>Deep Deep</label><input type="number" id="thDeepDeep" value="0.20" step="0.01" min="0.05"></div>
+      </div>
+      <hr class="sep">
+      <h3>Scenario Presets</h3>
+      <div class="row" id="presetBtns"></div>
+      <hr class="sep">
+      <h3>Moneyness Regime Examples</h3>
+      <p class="muted" style="font-size:11px;margin-bottom:6px;">Select a regime, then click Load Example (does not overwrite until confirmed).</p>
+      <div class="regime-grid" id="regimeCards"></div>
+      <div class="row" style="margin-top:8px;">
+        <button class="btn primary" id="btnLoadExample">Load Example</button>
+        <span class="muted mono" id="pendingRegime"></span>
+      </div>
+      <div id="regimeExplain" class="detail-panel" style="margin-top:8px;"></div>
+    </div>
+
+    <div class="grid" style="gap:12px;">
+      <div class="card">
+        <h2>Live Metrics <span class="muted" style="font-weight:400;text-transform:none;">· User supplied / theoretical</span></h2>
+        <div class="metric-grid" id="metricsPanel"></div>
+      </div>
+      <div class="card">
+        <h2>ATM Indicator</h2>
+        <div class="metric-grid" id="atmPanel"></div>
+        <p class="muted" style="margin-top:8px;font-size:11px;">ATM is defined by forward moneyness F≈K, not necessarily S=K when r, q, T matter.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="section card">
+    <h2>Input Sensitivity Engine</h2>
+    <div class="row" style="margin-bottom:8px;">
+      <span class="muted">Variable:</span>
+      <div class="seg" id="sensVarSeg">
+        <button data-var="S" class="active">S</button>
+        <button data-var="K">K</button>
+        <button data-var="sigma">σ</button>
+        <button data-var="T">T</button>
+        <button data-var="r">r</button>
+        <button data-var="q">q</button>
+      </div>
+      <div class="field" style="min-width:140px;"><label>Y metric</label>
+        <select id="sensY">
+          <option value="price">Price</option>
+          <option value="delta" selected>Delta</option>
+          <option value="gamma">Gamma</option>
+          <option value="vega">Vega</option>
+          <option value="theta">Theta</option>
+          <option value="rho">Rho</option>
+          <option value="lambda">Lambda</option>
+          <option value="charm">Charm</option>
+          <option value="vanna">Vanna</option>
+          <option value="vomma">Vomma</option>
+          <option value="speed">Speed</option>
+          <option value="color">Color</option>
+          <option value="ultima">Ultima</option>
+          <option value="all">All Greeks</option>
+        </select>
+      </div>
+      <div class="field"><label>Min</label><input type="number" id="sensMin" step="any"></div>
+      <div class="field"><label>Max</label><input type="number" id="sensMax" step="any"></div>
+      <div class="field"><label>Points</label><input type="number" id="sensPts" value="61" min="11" max="201"></div>
+      <button class="btn sm" id="btnResetSensRange">Reset Range</button>
+    </div>
+    <div class="chart-wrap tall"><canvas id="sensChart"></canvas></div>
+    <div id="sensChartFallback" class="muted" style="display:none;">Chart.js unavailable — tabular sample below.</div>
+    <div id="sensTableFallback" class="table-scroll" style="display:none;margin-top:8px;"></div>
+  </div>
+
+  <div class="section grid" style="grid-template-columns:1fr 1fr;gap:12px;">
+    <div class="card">
+      <h2>Multi-Greek vs Spot</h2>
+      <div class="checkbox-row" id="multiGreekToggles" style="margin-bottom:8px;"></div>
+      <div class="chart-wrap"><canvas id="multiChart"></canvas></div>
+    </div>
+    <div class="card">
+      <h2>Greek Profile Across Moneyness</h2>
+      <div class="row" style="margin-bottom:8px;">
+        <div class="seg" id="moneynessModeSeg">
+          <button data-mm="forward" class="active">Forward ln(F/K)</button>
+          <button data-mm="spot">Spot ln(S/K)</button>
+          <button data-mm="delta">Delta-based</button>
+        </div>
+      </div>
+      <div class="chart-wrap"><canvas id="profileChart"></canvas></div>
+    </div>
+  </div>
+
+  <div class="section grid" style="grid-template-columns:1fr 1fr;gap:12px;">
+    <div class="card">
+      <h2>Expiry Analysis (T → ε)</h2>
+      <div class="chart-wrap"><canvas id="expiryChart"></canvas></div>
+    </div>
+    <div class="card">
+      <h2>Volatility Analysis <span class="muted" style="font-weight:400;text-transform:none;">· constant BSM params except σ</span></h2>
+      <div class="chart-wrap"><canvas id="volChart"></canvas></div>
+    </div>
+  </div>
+
+  <div class="section card">
+    <h2>2D Sensitivity Heatmap</h2>
+    <div class="row" style="margin-bottom:8px;">
+      <div class="field"><label>X axis</label>
+        <select id="hmX"><option value="S" selected>Spot S</option><option value="K">Strike K</option><option value="sigma">σ</option><option value="T">T</option><option value="r">r</option><option value="q">q</option></select>
+      </div>
+      <div class="field"><label>Y axis</label>
+        <select id="hmY"><option value="sigma" selected>σ</option><option value="S">Spot S</option><option value="K">Strike K</option><option value="T">T</option><option value="r">r</option><option value="q">q</option></select>
+      </div>
+      <div class="field"><label>Color metric</label>
+        <select id="hmZ">
+          <option value="delta" selected>Delta</option><option value="price">Price</option><option value="gamma">Gamma</option>
+          <option value="vega">Vega</option><option value="theta">Theta</option><option value="rho">Rho</option>
+          <option value="vanna">Vanna</option><option value="vomma">Vomma</option><option value="speed">Speed</option>
+          <option value="charm">Charm</option><option value="color">Color</option><option value="ultima">Ultima</option><option value="lambda">Lambda</option>
+        </select>
+      </div>
+      <div class="field"><label>Resolution</label><input type="number" id="hmRes" value="40" min="15" max="80"></div>
+      <button class="btn sm" id="btnRenderHeatmap">Render</button>
+    </div>
+    <div class="heatmap-wrap"><canvas id="heatmapCanvas" width="720" height="420"></canvas></div>
+  </div>
+
+  <div class="section card">
+    <h2>3D Surface (optional canvas)</h2>
+    <div class="row" style="margin-bottom:8px;">
+      <div class="field"><label>Z metric</label>
+        <select id="surfZ">
+          <option value="gamma" selected>Gamma</option><option value="price">Price</option><option value="delta">Delta</option>
+          <option value="vega">Vega</option><option value="theta">Theta</option><option value="rho">Rho</option>
+        </select>
+      </div>
+      <button class="btn sm" id="btnRenderSurface">Render Surface</button>
+      <span class="muted">X=Spot, Y=σ — drag not required; static projection.</span>
+    </div>
+    <canvas id="surfaceCanvas" width="720" height="420"></canvas>
+  </div>
+
+  <div class="section card">
+    <h2>What happens if the input increases?</h2>
+    <p class="muted" style="margin-bottom:8px;">Local perturbation from current parameters. Arrows from finite-difference engine — never hardcoded.</p>
+    <div class="table-scroll" id="directionTableWrap"></div>
+    <p class="footnote">Directional arrows describe the local BSM sensitivity around the current scenario. Higher-order Greek relationships can change sign across parameter space; cells marked ± are conditional rather than universally monotonic.</p>
+  </div>
+
+  <div class="section grid" style="grid-template-columns:1fr 1fr;gap:12px;">
+    <div class="card">
+      <h2>Cross-Greek Derivative View</h2>
+      <div class="row">
+        <div class="field"><label>Output Greek</label>
+          <select id="xdOut">
+            <option value="delta">Delta</option><option value="gamma">Gamma</option><option value="vega">Vega</option>
+            <option value="theta">Theta</option><option value="rho">Rho</option><option value="price">Price</option>
+          </select>
+        </div>
+        <div class="field"><label>Input</label>
+          <select id="xdIn">
+            <option value="S">S</option><option value="K">K</option><option value="sigma">σ</option>
+            <option value="T">T</option><option value="r">r</option><option value="q">q</option>
+          </select>
+        </div>
+      </div>
+      <div class="detail-panel" id="crossDerivPanel" style="margin-top:8px;"></div>
+    </div>
+    <div class="card">
+      <h2>Second-Order Sensitivity Matrix</h2>
+      <div class="table-scroll" id="secondOrderWrap"></div>
+    </div>
+  </div>
+
+  <div class="section card">
+    <h2>Put-Call Parity Check</h2>
+    <div class="metric-grid" id="parityPanel"></div>
+  </div>
+
+  <div class="section card core-intuition">
+    <h2>Core Intuition</h2>
+    <dl>
+      <dt>Delta</dt><dd>Directional exposure — ∂V/∂S</dd>
+      <dt>Gamma</dt><dd>How fast Delta changes — ∂²V/∂S²</dd>
+      <dt>Vega</dt><dd>Volatility sensitivity — ∂V/∂σ</dd>
+      <dt>Theta</dt><dd>Time decay — ∂V/∂t (calendar) or −∂V/∂T</dd>
+      <dt>Rho</dt><dd>Interest-rate sensitivity — ∂V/∂r</dd>
+      <dt>Vanna</dt><dd>Spot–vol interaction — ∂Δ/∂σ = ∂Vega/∂S</dd>
+      <dt>Vomma</dt><dd>How Vega changes with vol — ∂Vega/∂σ</dd>
+      <dt>Speed</dt><dd>How Gamma changes with spot — ∂Γ/∂S</dd>
+      <dt>Color</dt><dd>How Gamma changes with time — ∂Γ/∂t</dd>
+      <dt>Ultima</dt><dd>How Vomma changes with vol — ∂Vomma/∂σ</dd>
+      <dt>Lambda</dt><dd>Elasticity — Δ × S / V</dd>
+      <dt>Charm</dt><dd>Delta decay — ∂Δ/∂t</dd>
+    </dl>
+  </div>
+</section>
+
+<!-- ===================== PAGE: MATRIX ===================== -->
+<section class="page" id="page-matrix">
+  <div class="card">
+    <h2>Greek Relationship Matrix</h2>
+    <div class="row" style="margin-bottom:10px;">
+      <div class="seg" id="matrixTypeSeg">
+        <button data-type="call" class="active">Call</button>
+        <button data-type="put">Put</button>
+      </div>
+      <button class="btn sm" id="btnRebuildMatrix">Rebuild from Engine</button>
+      <button class="btn sm" id="btnExportMatrix">Export Matrix JSON</button>
+    </div>
+    <p class="muted">Generated by perturbing representative scenarios per moneyness regime — not hardcoded intuition.</p>
+  </div>
+
+  <div class="section card">
+    <h2>Master Relationship Matrix (S↑ overview)</h2>
+    <div class="tabs-mini" id="masterInputTabs"></div>
+    <div class="table-scroll" id="masterMatrixWrap"></div>
+    <p class="footnote">Directional arrows describe the local BSM sensitivity around the representative scenario. Higher-order Greek relationships can change sign across parameter space; cells marked ± are conditional rather than universally monotonic.</p>
+  </div>
+
+  <div id="regimeMatrixSections"></div>
+
+  <div class="section card">
+    <h2>Cell Detail — Why?</h2>
+    <div class="detail-panel" id="matrixCellDetail">Click any matrix cell to see the mathematical relationship, baseline, perturbed value, and interpretation.</div>
+  </div>
+</section>
+
+<!-- ===================== PAGE: VALIDATION ===================== -->
+<section class="page" id="page-validation">
+  <div class="card">
+    <h2>Model Validation</h2>
+    <button class="btn primary" id="btnRunTests">Run Full Test Suite</button>
+    <div id="validationSummary" style="margin-top:12px;"></div>
+  </div>
+  <div class="section card">
+    <h2>Analytical vs Numerical (current params)</h2>
+    <div class="table-scroll" id="analNumWrap"></div>
+  </div>
+  <div class="section card">
+    <h2>Test Log</h2>
+    <div class="validation-list" id="testLog"></div>
+  </div>
+</section>
+
+<!-- ===================== PAGE: ABOUT ===================== -->
+<section class="page" id="page-about">
+  <div class="card about">
+    <h2>About this Laboratory</h2>
+    <p>This is a theoretical <strong>Black-Scholes-Merton</strong> analytical laboratory for European options with continuous dividend yield — <em>not</em> a market pricing engine.</p>
+    <p><strong>Assumptions:</strong> European exercise · continuous dividend yield q · continuous compounding · constant volatility · constant risk-free rate · no transaction costs · no bid/ask · no early exercise · no volatility smile · no stochastic rates/vol.</p>
+    <p>All inputs are <strong>user supplied / theoretical</strong>. No fake live market data is used.</p>
+    <hr class="sep">
+    <h3>Model</h3>
+    <p>$$d_1=\frac{\ln(S/K)+(r-q+\sigma^2/2)T}{\sigma\sqrt{T}},\quad d_2=d_1-\sigma\sqrt{T}$$</p>
+    <p>$$C=Se^{-qT}N(d_1)-Ke^{-rT}N(d_2),\quad P=Ke^{-rT}N(-d_2)-Se^{-qT}N(-d_1)$$</p>
+    <hr class="sep">
+    <h3>Conventions</h3>
+    <p><strong>Vega:</strong> raw ∂V/∂σ (per unit σ=1.00). Display toggle also shows per vol point (÷100).</p>
+    <p><strong>Theta:</strong> analytical calendar theta ∂V/∂t = −∂V/∂T (annual). Daily = annual/365 (or /252 for ACT/252 display).</p>
+    <p><strong>Charm / Color:</strong> calendar-time convention ∂/∂t = −∂/∂T (time-to-expiry).</p>
+    <p><strong>Moneyness:</strong> primary metric ln(F/K) with F=Se^{(r−q)T}. For puts, ITM/OTM uses −ln(F/K).</p>
+  </div>
+</section>
+
+<script>
+// ===============================
+// CONFIGURATION
+// ===============================
+const CONFIG = {
+  EPS_T: 1e-6,
+  EPS_SIGMA: 1e-8,
+  FLAT_REL: 1e-4,
+  FLAT_ABS: 1e-6,
+  FD_TOL_ABS: 1e-3,
+  FD_TOL_REL: 0.05,
+  DEFAULT: { S: 100, K: 100, sigma: 0.20, T: 30 / 365, r: 0.05, q: 0, type: 'call' },
+  THRESHOLDS: {
+    deepDeep: 0.20,
+    deep: 0.10,
+    atm: 0.02
+  },
+  GREEKS: ['price','delta','gamma','vega','theta','rho','lambda','charm','vanna','vomma','speed','color','ultima'],
+  PRIMARY: ['delta','gamma','vega','theta','rho'],
+  INPUTS: ['S','K','sigma','T','r','q'],
+  REGIMES: [
+    { id: 'deep_deep_itm', label: 'Deep Deep ITM', short: 'DD ITM' },
+    { id: 'deep_itm', label: 'Deep ITM', short: 'D ITM' },
+    { id: 'itm', label: 'ITM', short: 'ITM' },
+    { id: 'atm', label: 'ATM', short: 'ATM' },
+    { id: 'otm', label: 'OTM', short: 'OTM' },
+    { id: 'deep_otm', label: 'Deep OTM', short: 'D OTM' },
+    { id: 'deep_deep_otm', label: 'Deep Deep OTM', short: 'DD OTM' }
+  ],
+  // Target |ln(F/K)| midpoints for representative scenarios (call-centric; flipped for puts)
+  REGIME_LF: {
+    deep_deep_itm: 0.28,
+    deep_itm: 0.15,
+    itm: 0.05,
+    atm: 0,
+    otm: -0.05,
+    deep_otm: -0.15,
+    deep_deep_otm: -0.28
+  }
+};
+
+const TOOLTIPS = {
+  price: { def: 'European BSM option value', formula: 'C = S e^{-qT} N(d1) − K e^{-rT} N(d2)', units: 'currency', interp: 'Theoretical fair value under BSM assumptions.' },
+  delta: { def: '∂V/∂S', formula: 'Δ_call = e^{-qT} N(d1); Δ_put = e^{-qT}(N(d1)−1)', units: 'per $1 spot', interp: 'Expected change in option price for a $1 spot move.' },
+  gamma: { def: '∂²V/∂S² = ∂Δ/∂S', formula: 'Γ = e^{-qT} φ(d1) / (S σ √T)', units: 'Δ per $1 spot', interp: 'Long calls/puts have positive Gamma under BSM.' },
+  vega: { def: '∂V/∂σ', formula: 'Vega = S e^{-qT} φ(d1) √T', units: 'per unit σ (or /100 per vol point)', interp: 'Sensitivity to assumed volatility.' },
+  theta: { def: 'Calendar time decay ∂V/∂t = −∂V/∂T', formula: 'See BSM theta formulas', units: 'per year or per day', interp: 'Usually negative for long options; exceptions near deep ITM puts exist.' },
+  rho: { def: '∂V/∂r', formula: 'ρ_call = K T e^{-rT} N(d2); ρ_put = −K T e^{-rT} N(−d2)', units: 'per unit rate', interp: 'Rate sensitivity.' },
+  lambda: { def: 'Elasticity Δ·S/V', formula: 'Λ = Δ × S / V', units: 'dimensionless', interp: 'Percentage option change per percentage spot change (signed).' },
+  charm: { def: '∂Δ/∂t (calendar)', formula: 'Charm = −∂Δ/∂T', units: 'Δ per year', interp: 'How delta changes as time passes.' },
+  vanna: { def: '∂Δ/∂σ = ∂Vega/∂S', formula: 'Vanna = −e^{-qT} φ(d1) d2 / σ', units: 'Δ per unit σ', interp: 'Spot–vol cross sensitivity; sign can flip across moneyness.' },
+  vomma: { def: '∂Vega/∂σ (Volga)', formula: 'Vomma = Vega · d1 · d2 / σ', units: 'Vega per unit σ', interp: 'Convexity of value w.r.t. volatility.' },
+  speed: { def: '∂Γ/∂S', formula: 'Speed = −Γ/S · (1 + d1/(σ√T))', units: 'Γ per $1', interp: 'Not globally signed — can change around ATM.' },
+  color: { def: '∂Γ/∂t (calendar)', formula: 'Color = −∂Γ/∂T', units: 'Γ per year', interp: 'How gamma evolves with time.' },
+  ultima: { def: '∂Vomma/∂σ', formula: 'Ultima = −(Vega/σ²)[d1 d2(1−d1 d2)+d1²+d2²]', units: 'per unit σ³', interp: 'Third-order vol sensitivity.' },
+  forward: { def: 'Forward price', formula: 'F = S e^{(r−q)T}', units: 'currency', interp: 'Risk-neutral forward.' },
+  d1: { def: 'BSM d1', formula: 'd1 = [ln(S/K)+(r−q+σ²/2)T]/(σ√T)', units: '', interp: 'Standardized moneyness adjusted for carry and vol.' },
+  d2: { def: 'BSM d2', formula: 'd2 = d1 − σ√T', units: '', interp: 'Risk-neutral exercise probability argument.' },
+  intrinsic: { def: 'Intrinsic value', formula: 'max(S−K,0) call / max(K−S,0) put', units: 'currency', interp: 'Immediate exercise value (European still uses discounted model).' },
+  timeValue: { def: 'Time value', formula: 'V − intrinsic', units: 'currency', interp: 'Premium above intrinsic.' },
+  moneyness: { def: 'Forward log-moneyness', formula: 'ln(F/K)', units: '', interp: 'Primary classification metric.' }
+};
+
+const REGIME_EXPLAIN = {
+  call: {
+    deep_deep_itm: 'Typical BSM behavior: Delta → ~e^{−qT}≈1, Gamma generally low, Vega lower than ATM, price dominated by discounted intrinsic.',
+    deep_itm: 'Typical: high Delta, moderate-low Gamma/Vega vs ATM.',
+    itm: 'Typical: Delta elevated, meaningful Gamma/Vega remaining.',
+    atm: 'Typical: Gamma & Vega near peaks; Delta near e^{−qT}/2 (≈0.5 if q=0).',
+    otm: 'Typical: Delta & price lower; Gamma/Vega still material.',
+    deep_otm: 'Typical: low Delta, Gamma/Vega declining.',
+    deep_deep_otm: 'Typical: Delta→0, Gamma/Vega small, price mostly time value near zero.'
+  },
+  put: {
+    deep_deep_itm: 'Typical BSM behavior: Delta → ~−e^{−qT}≈−1, Gamma generally low, Vega lower than ATM.',
+    deep_itm: 'Typical: Delta near −1, Gamma/Vega reduced vs ATM.',
+    itm: 'Typical: Delta negative and sizable; Gamma/Vega meaningful.',
+    atm: 'Typical: Gamma & Vega near peaks; Delta near −e^{−qT}/2.',
+    otm: 'Typical: Delta closer to 0; premium smaller.',
+    deep_otm: 'Typical: Delta→0 from below; low Gamma/Vega.',
+    deep_deep_otm: 'Typical: nearly worthless; Greeks near 0.'
+  }
+};
+
+// ===============================
+// MATH UTILITIES
+// ===============================
+const SQRT2PI = Math.sqrt(2 * Math.PI);
+const INV_SQRT2 = 1 / Math.sqrt(2);
+
+function normPDF(x) {
+  return Math.exp(-0.5 * x * x) / SQRT2PI;
+}
+
+/** Stable standard normal CDF via erfc(x/√2). */
+function normCDF(x) {
+  if (!Number.isFinite(x)) return x > 0 ? 1 : 0;
+  return 0.5 * erfc(-x * INV_SQRT2);
+}
+
+function erfc(x) {
+  const z = Math.abs(x);
+  const t = 1 / (1 + 0.5 * z);
+  const tau = t * Math.exp(-z * z - 1.26551223 +
+    t * (1.00002368 +
+    t * (0.37409196 +
+    t * (0.09678418 +
+    t * (-0.18628806 +
+    t * (0.27886807 +
+    t * (-1.13520398 +
+    t * (1.48851587 +
+    t * (-0.82215223 +
+    t * 0.17087277)))))))));
+  return x >= 0 ? tau : 2 - tau;
+}
+
+function clampPositive(x, eps) {
+  return Math.max(x, eps);
+}
+
+function isBad(x) {
+  return !Number.isFinite(x);
+}
+
+function safeDiv(a, b) {
+  if (Math.abs(b) < 1e-15) return NaN;
+  return a / b;
+}
+
+function fmt(x, d = 4) {
+  if (!Number.isFinite(x)) return '—';
+  if (Math.abs(x) >= 1e6 || (Math.abs(x) > 0 && Math.abs(x) < 1e-4)) return x.toExponential(3);
+  return x.toFixed(d);
+}
+
+function fmtPct(x) {
+  if (!Number.isFinite(x)) return '—';
+  return (100 * x).toFixed(2) + '%';
+}
+
+// ===============================
+// BSM PRICING + GREEKS (source of truth)
+// ===============================
+function validateParams(p) {
+  const issues = [];
+  if (!(p.S > 0)) issues.push('S must be > 0');
+  if (!(p.K > 0)) issues.push('K must be > 0');
+  if (!(p.sigma > 0)) issues.push('σ must be > 0');
+  if (!(p.T > 0)) issues.push('T must be > 0');
+  if (!Number.isFinite(p.r)) issues.push('r invalid');
+  if (!Number.isFinite(p.q)) issues.push('q invalid');
+  return issues;
+}
+
+function sanitizeParams(p) {
+  return {
+    S: clampPositive(+p.S, 1e-8),
+    K: clampPositive(+p.K, 1e-8),
+    sigma: clampPositive(+p.sigma, CONFIG.EPS_SIGMA),
+    T: clampPositive(+p.T, CONFIG.EPS_T),
+    r: +p.r,
+    q: +p.q,
+    type: p.type === 'put' ? 'put' : 'call'
+  };
+}
+
+/**
+ * Single source of truth for BSM European with continuous yield.
+ * Returns price + all greeks (analytical) + diagnostics.
+ * Vega = ∂V/∂σ (per unit vol).
+ * Theta/Charm/Color use calendar-time convention ∂/∂t = −∂/∂T.
+ */
+function calculateBSM(raw) {
+  const p = sanitizeParams(raw);
+  const issues = validateParams(p);
+  const out = {
+    params: p,
+    valid: issues.length === 0,
+    issues,
+    S: p.S, K: p.K, sigma: p.sigma, T: p.T, r: p.r, q: p.q, type: p.type
+  };
+
+  const { S, K, sigma, T, r, q } = p;
+  const sqrtT = Math.sqrt(T);
+  const sigSqrtT = sigma * sqrtT;
+  const discountQ = Math.exp(-q * T);
+  const discountR = Math.exp(-r * T);
+  const forward = S * Math.exp((r - q) * T);
+  const logSK = Math.log(S / K);
+  const d1 = (logSK + (r - q + 0.5 * sigma * sigma) * T) / sigSqrtT;
+  const d2 = d1 - sigSqrtT;
+  const nd1 = normCDF(d1);
+  const nd2 = normCDF(d2);
+  const nmd1 = normCDF(-d1);
+  const nmd2 = normCDF(-d2);
+  const pd1 = normPDF(d1);
+
+  const call = S * discountQ * nd1 - K * discountR * nd2;
+  const put = K * discountR * nmd2 - S * discountQ * nmd1;
+  const price = p.type === 'call' ? call : put;
+
+  const deltaCall = discountQ * nd1;
+  const deltaPut = discountQ * (nd1 - 1);
+  const delta = p.type === 'call' ? deltaCall : deltaPut;
+
+  const gamma = discountQ * pd1 / (S * sigSqrtT);
+  const vega = S * discountQ * pd1 * sqrtT; // per unit σ
+
+  // Calendar theta ∂V/∂t (standard BSM / user formula) = −∂V/∂T
+  const commonThetaVol = -(S * discountQ * pd1 * sigma) / (2 * sqrtT);
+  const thetaCall = commonThetaVol - r * K * discountR * nd2 + q * S * discountQ * nd1;
+  const thetaPut = commonThetaVol + r * K * discountR * nmd2 - q * S * discountQ * nmd1;
+  const theta = p.type === 'call' ? thetaCall : thetaPut;
+
+  const rhoCall = K * T * discountR * nd2;
+  const rhoPut = -K * T * discountR * nmd2;
+  const rho = p.type === 'call' ? rhoCall : rhoPut;
+
+  const lambda = Math.abs(price) > 1e-15 ? delta * S / price : NaN;
+
+  // Charm = ∂Δ/∂t (calendar) = −∂Δ/∂T
+  // Haug: call −e^{-qT}[φ(d1)(2(r−q)T − d2 σ√T)/(2T σ√T) + q N(d1)]
+  const charmCommon = pd1 * (2 * (r - q) * T - d2 * sigSqrtT) / (2 * T * sigSqrtT);
+  const charmCall = -discountQ * (charmCommon + q * nd1);
+  const charmPut = -discountQ * (charmCommon - q * nmd1);
+  const charm = p.type === 'call' ? charmCall : charmPut;
+
+  // Vanna = ∂Δ/∂σ = −e^{-qT} φ(d1) d2 / σ
+  const vanna = -discountQ * pd1 * d2 / sigma;
+
+  // Vomma = Vega * d1 * d2 / σ
+  const vomma = vega * d1 * d2 / sigma;
+
+  // Speed = ∂Γ/∂S
+  const speed = -gamma / S * (1 + d1 / sigSqrtT);
+
+  // Color = ∂Γ/∂t (calendar) = −∂Γ/∂T
+  // Literature formulas disagree on sign naming; we use calendar convention verified by FD.
+  const colorFactor = 2 * q * T + 1 + (2 * (r - q) * T - d2 * sigSqrtT) * d1 / sigSqrtT;
+  const color = discountQ * pd1 / (2 * S * T * sigSqrtT) * colorFactor;
+
+  // Ultima = ∂Vomma/∂σ
+  // Haug: Ultima = −(Vega/σ²) [ d1 d2 (1 − d1 d2) + d1² + d2² ]
+  const ultima = -(vega / (sigma * sigma)) * (d1 * d2 * (1 - d1 * d2) + d1 * d1 + d2 * d2);
+
+  const intrinsic = p.type === 'call' ? Math.max(S - K, 0) : Math.max(K - S, 0);
+  const timeValue = price - intrinsic;
+  const logFwdMoneyness = Math.log(forward / K);
+  const logSpotMoneyness = Math.log(S / K);
+
+  Object.assign(out, {
+    forward, d1, d2, nd1, nd2, pd1,
+    call, put, price,
+    delta, deltaCall, deltaPut,
+    gamma, vega, theta, thetaAnnual: theta, rho,
+    lambda, charm, vanna, vomma, speed, color, ultima,
+    intrinsic, timeValue,
+    logFwdMoneyness, logSpotMoneyness,
+    discountQ, discountR, sigSqrtT
+  });
+
+  // Guard NaN leaks
+  for (const k of CONFIG.GREEKS) {
+    if (isBad(out[k])) out[k] = NaN;
+  }
+  return out;
+}
+
+function getMetric(res, key, display) {
+  let v = res[key];
+  if (key === 'vega' || key === 'vomma' || key === 'ultima' || key === 'vanna' || key === 'rho') {
+    if (display && display.unitMode === 'pct') {
+      // per 1% = per 0.01 in the input
+      if (key === 'vega' || key === 'vomma' || key === 'ultima' || key === 'vanna') v = v / 100;
+      if (key === 'rho') v = v / 100;
+    }
+  }
+  if (key === 'theta' || key === 'charm' || key === 'color') {
+    if (display && display.thetaMode === 'day') {
+      const div = display.dayCount || 365;
+      v = v / div;
+    }
+  }
+  return v;
+}
+
+// ===============================
+// FINITE DIFFERENCE ENGINE
+// ===============================
+function stepSize(params, variable) {
+  const p = sanitizeParams(params);
+  switch (variable) {
+    case 'S': return Math.max(p.S * 1e-4, 1e-6);
+    case 'K': return Math.max(p.K * 1e-4, 1e-6);
+    case 'sigma': return Math.max(p.sigma * 1e-4, 1e-6);
+    case 'T': return Math.max(p.T * 1e-4, 1e-7);
+    case 'r': return Math.max(Math.abs(p.r) * 1e-4, 1e-6);
+    case 'q': return Math.max(Math.abs(p.q) * 1e-4, 1e-6);
+    default: return 1e-5;
+  }
+}
+
+function bumpParams(params, variable, h) {
+  const p = { ...sanitizeParams(params) };
+  p[variable] = p[variable] + h;
+  if (variable === 'S' || variable === 'K' || variable === 'sigma' || variable === 'T') {
+    p[variable] = clampPositive(p[variable], variable === 'T' ? CONFIG.EPS_T : (variable === 'sigma' ? CONFIG.EPS_SIGMA : 1e-8));
+  }
+  return p;
+}
+
+function greekValue(params, greek, display) {
+  const res = calculateBSM(params);
+  return getMetric(res, greek, display);
+}
+
+function centralDiff(params, variable, outputGreek, display) {
+  const h = stepSize(params, variable);
+  const up = bumpParams(params, variable, h);
+  const dn = bumpParams(params, variable, -h);
+  // ensure down bump didn't collapse
+  const vu = greekValue(up, outputGreek, display);
+  const vd = greekValue(dn, outputGreek, display);
+  const actualH = (up[variable] - dn[variable]) / 2;
+  if (actualH === 0) return NaN;
+  return (vu - vd) / (2 * actualH);
+}
+
+function sensitivity(baseParams, variable, outputGreek, eps, display) {
+  const base = calculateBSM(baseParams);
+  const baseVal = getMetric(base, outputGreek, display);
+  const h = eps != null ? eps : stepSize(baseParams, variable) * 10; // larger for directional
+  const up = bumpParams(baseParams, variable, h);
+  const valUp = getMetric(calculateBSM(up), outputGreek, display);
+  const change = valUp - baseVal;
+  return { baseVal, valUp, change, h, paramsUp: up, base };
+}
+
+function classifyDirection(change, baseVal, opts = {}) {
+  const flatAbs = opts.flatAbs ?? CONFIG.FLAT_ABS;
+  const flatRel = opts.flatRel ?? CONFIG.FLAT_REL;
+  const scale = Math.max(Math.abs(baseVal), 1e-8);
+  if (!Number.isFinite(change)) return { arrow: '±', cls: 'arrow-cond', label: 'conditional' };
+  if (Math.abs(change) < flatAbs && Math.abs(change) / scale < flatRel) {
+    return { arrow: '→', cls: 'arrow-flat', label: 'unchanged' };
+  }
+  if (change > 0) return { arrow: '↑', cls: 'arrow-up', label: 'increase' };
+  return { arrow: '↓', cls: 'arrow-down', label: 'decrease' };
+}
+
+/** Probe several points in a regime to see if sign of ∂greek/∂input is stable */
+function relationshipConfidence(repParams, variable, greek, display) {
+  const signs = [];
+  const probes = buildRegimeProbes(repParams, 5);
+  for (const pr of probes) {
+    const h = stepSize(pr, variable) * 5;
+    const s = sensitivity(pr, variable, greek, h, display);
+    const d = classifyDirection(s.change, s.baseVal);
+    if (d.arrow === '↑') signs.push(1);
+    else if (d.arrow === '↓') signs.push(-1);
+    else signs.push(0);
+  }
+  const nonzero = signs.filter(x => x !== 0);
+  if (nonzero.length === 0) return { arrow: '→', confidence: 'Typical', cls: 'arrow-flat' };
+  const allPos = nonzero.every(x => x > 0);
+  const allNeg = nonzero.every(x => x < 0);
+  if (allPos) return { arrow: '↑', confidence: nonzero.length === signs.length ? 'Universal' : 'Typical', cls: 'arrow-up' };
+  if (allNeg) return { arrow: '↓', confidence: nonzero.length === signs.length ? 'Universal' : 'Typical', cls: 'arrow-down' };
+  return { arrow: '±', confidence: 'Conditional', cls: 'arrow-cond' };
+}
+
+function buildRegimeProbes(base, n) {
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1 || 1);
+    const p = { ...base };
+    p.sigma = clampPositive(base.sigma * (0.7 + 0.6 * t), CONFIG.EPS_SIGMA);
+    p.T = clampPositive(base.T * (0.5 + t), CONFIG.EPS_T);
+    out.push(p);
+  }
+  return out;
+}
+
+// ===============================
+// MONEyness ENGINE
+// ===============================
+function signedLogMoneyness(res) {
+  // Call: +ln(F/K) ITM when >0; Put: use −ln(F/K) so ITM when put is ITM
+  return res.type === 'put' ? -res.logFwdMoneyness : res.logFwdMoneyness;
+}
+
+function classifyMoneyness(res, thresholds = CONFIG.THRESHOLDS) {
+  const m = signedLogMoneyness(res);
+  const { deepDeep, deep, atm } = thresholds;
+  let id, label;
+  if (m >= deepDeep) { id = 'deep_deep_itm'; label = 'Deep Deep ITM'; }
+  else if (m >= deep) { id = 'deep_itm'; label = 'Deep ITM'; }
+  else if (m > atm) { id = 'itm'; label = 'ITM'; }
+  else if (m >= -atm) { id = 'atm'; label = 'ATM'; }
+  else if (m > -deep) { id = 'otm'; label = 'OTM'; }
+  else if (m > -deepDeep) { id = 'deep_otm'; label = 'Deep OTM'; }
+  else { id = 'deep_deep_otm'; label = 'Deep Deep OTM'; }
+  return { id, label, signedM: m, rawLnFK: res.logFwdMoneyness };
+}
+
+function representativeParams(regimeId, type, base = CONFIG.DEFAULT) {
+  const lfCall = CONFIG.REGIME_LF[regimeId];
+  // For puts, flip target so signed moneyness matches regime
+  const lf = type === 'put' ? -lfCall : lfCall;
+  const S = base.S;
+  const sigma = base.sigma;
+  const T = base.T;
+  const r = base.r;
+  const q = base.q;
+  const F = S * Math.exp((r - q) * T);
+  // ln(F/K) = lf => K = F / e^{lf}
+  const K = F / Math.exp(lf);
+  return { S, K, sigma, T, r, q, type };
+}
+
+// ===============================
+// STATE + UI
+// ===============================
+const State = {
+  params: { ...CONFIG.DEFAULT },
+  dayCount: 365,
+  unitMode: 'unit',
+  thetaMode: 'year',
+  sensVar: 'S',
+  moneynessMode: 'forward',
+  pendingRegime: null,
+  matrixType: 'call',
+  masterInput: 'S',
+  charts: {},
+  lastMatrix: null,
+  debounceTimer: null,
+  multiGreeks: { delta: true, gamma: true, vega: true, theta: true, rho: true },
+  validation: null
+};
+
+function displayOpts() {
+  return { unitMode: State.unitMode, thetaMode: State.thetaMode, dayCount: State.dayCount };
+}
+
+function readInputsToState() {
+  State.params.S = +document.getElementById('inpS').value;
+  State.params.K = +document.getElementById('inpK').value;
+  State.params.sigma = +document.getElementById('inpSigma').value;
+  State.params.T = +document.getElementById('inpT').value;
+  State.params.r = +document.getElementById('inpR').value;
+  State.params.q = +document.getElementById('inpQ').value;
+}
+
+function writeStateToInputs() {
+  const p = State.params;
+  document.getElementById('inpS').value = p.S;
+  document.getElementById('inpK').value = p.K;
+  document.getElementById('inpSigma').value = p.sigma;
+  document.getElementById('inpT').value = p.T;
+  document.getElementById('inpR').value = p.r;
+  document.getElementById('inpQ').value = p.q;
+  document.getElementById('inpDays').value = Math.round(p.T * State.dayCount);
+  document.querySelectorAll('#optTypeSeg button').forEach(b => {
+    b.classList.toggle('active', b.dataset.type === p.type);
+  });
+}
+
+function metricHTML(name, key, val, unit) {
+  const tip = TOOLTIPS[key] || TOOLTIPS[name.toLowerCase()] || {};
+  return `<div class="metric">
+    <div class="name">${name}</div>
+    <div class="val">${fmt(val, key === 'gamma' || key === 'speed' ? 6 : 4)}</div>
+    <div class="unit">${unit || tip.units || ''}</div>
+    <div class="tip"><strong>${tip.def || name}</strong><br>${tip.formula || ''}<br><em>${tip.interp || ''}</em><br>Units: ${tip.units || unit || ''}</div>
+  </div>`;
+}
+
+function renderMetrics() {
+  readInputsToState();
+  const res = calculateBSM(State.params);
+  const d = displayOpts();
+  const issues = validateParams(sanitizeParams(State.params));
+  const box = document.getElementById('warnGlobal');
+  if (issues.length) {
+    box.classList.add('show');
+    box.textContent = 'Validation: ' + issues.join('; ');
+  } else {
+    box.classList.remove('show');
+  }
+
+  const m = classifyMoneyness(res);
+  const units = {
+    price: '',
+    delta: 'per $1',
+    gamma: 'Δ per $1',
+    vega: d.unitMode === 'pct' ? 'per 1 vol pt' : 'per unit σ',
+    theta: d.thetaMode === 'day' ? `per day (/${d.dayCount})` : 'per year',
+    rho: d.unitMode === 'pct' ? 'per 1% rate' : 'per unit r',
+    lambda: 'elasticity',
+    charm: d.thetaMode === 'day' ? 'Δ/day' : 'Δ/year',
+    vanna: d.unitMode === 'pct' ? 'per vol pt' : 'per unit σ',
+    vomma: d.unitMode === 'pct' ? 'per vol pt' : 'per unit σ',
+    speed: 'Γ per $1',
+    color: d.thetaMode === 'day' ? 'Γ/day' : 'Γ/year',
+    ultima: '∂Vomma/∂σ'
+  };
+
+  const keys = [
+    ['Moneyness', 'moneyness', m.label],
+    ['Forward', 'forward', res.forward],
+    ['ln(F/K)', 'moneyness', res.logFwdMoneyness],
+    ['d1', 'd1', res.d1],
+    ['d2', 'd2', res.d2],
+    ['Intrinsic', 'intrinsic', res.intrinsic],
+    ['Time Value', 'timeValue', res.timeValue],
+    ['Option Price', 'price', getMetric(res, 'price', d)],
+    ['Delta', 'delta', getMetric(res, 'delta', d)],
+    ['Gamma', 'gamma', getMetric(res, 'gamma', d)],
+    ['Vega', 'vega', getMetric(res, 'vega', d)],
+    ['Theta', 'theta', getMetric(res, 'theta', d)],
+    ['Rho', 'rho', getMetric(res, 'rho', d)],
+    ['Lambda', 'lambda', getMetric(res, 'lambda', d)],
+    ['Charm', 'charm', getMetric(res, 'charm', d)],
+    ['Vanna', 'vanna', getMetric(res, 'vanna', d)],
+    ['Vomma', 'vomma', getMetric(res, 'vomma', d)],
+    ['Speed', 'speed', getMetric(res, 'speed', d)],
+    ['Color', 'color', getMetric(res, 'color', d)],
+    ['Ultima', 'ultima', getMetric(res, 'ultima', d)]
+  ];
+
+  document.getElementById('metricsPanel').innerHTML = keys.map(([name, key, val]) => {
+    if (key === 'moneyness' && typeof val === 'string') {
+      return `<div class="metric"><div class="name">${name}</div><div class="val" style="font-size:12px;">${val}</div>
+        <div class="tip">Classification via signed forward log-moneyness. Raw ln(F/K)=${fmt(res.logFwdMoneyness,4)}; signed=${fmt(m.signedM,4)}</div></div>`;
+    }
+    return metricHTML(name, key, val, units[key]);
+  }).join('');
+
+  // ATM panel
+  const atm = Math.abs(res.logFwdMoneyness) < CONFIG.THRESHOLDS.atm;
+  document.getElementById('atmPanel').innerHTML = [
+    metricHTML('ATM?', 'moneyness', atm ? 1 : 0, atm ? 'YES (forward)' : 'NO'),
+    metricHTML('F/K', 'forward', res.forward / res.K, ''),
+    metricHTML('ln(F/K)', 'moneyness', res.logFwdMoneyness, ''),
+    metricHTML('d1', 'd1', res.d1, ''),
+    metricHTML('d2', 'd2', res.d2, ''),
+    metricHTML('Delta', 'delta', getMetric(res, 'delta', d), ''),
+    metricHTML('Gamma', 'gamma', getMetric(res, 'gamma', d), ''),
+    metricHTML('Vega', 'vega', getMetric(res, 'vega', d), ''),
+    metricHTML('Theta', 'theta', getMetric(res, 'theta', d), '')
+  ].join('');
+  // Fix ATM? display
+  document.getElementById('atmPanel').querySelector('.metric .val').textContent = atm ? 'YES' : 'NO';
+
+  // Parity
+  const lhs = res.call - res.put;
+  const rhs = res.S * res.discountQ - res.K * res.discountR;
+  const diff = lhs - rhs;
+  const pass = Math.abs(diff) < 1e-8;
+  document.getElementById('parityPanel').innerHTML = [
+    metricHTML('Call', 'price', res.call, ''),
+    metricHTML('Put', 'price', res.put, ''),
+    metricHTML('C − P', 'price', lhs, ''),
+    metricHTML('S e^{-qT} − K e^{-rT}', 'price', rhs, ''),
+    metricHTML('Difference', 'price', diff, ''),
+    `<div class="metric"><div class="name">Parity</div><div class="val" style="color:${pass ? 'var(--pass)' : 'var(--fail)'}">${pass ? 'PASS' : 'FAIL'}</div></div>`
+  ].join('');
+
+  // Regime explain
+  const ex = REGIME_EXPLAIN[res.type][m.id] || '';
+  document.getElementById('regimeExplain').innerHTML = `<strong>${m.label} ${res.type.toUpperCase()}</strong><br><span class="muted">Typical BSM behavior (not a mathematical absolute):</span><br>${ex}
+    <br><span class="mono muted">S=${fmt(res.S,2)} K=${fmt(res.K,2)} F=${fmt(res.forward,2)} ln(F/K)=${fmt(res.logFwdMoneyness,4)} Δ=${fmt(res.delta,4)}</span>`;
+
+  // Highlight regime card
+  document.querySelectorAll('#regimeCards .regime').forEach(el => {
+    el.classList.toggle('active', el.dataset.id === m.id);
+  });
+
+  renderDirectionTable(res);
+  renderCrossDeriv();
+  renderSecondOrder();
+  return res;
+}
+
+function arrowCell(rel, change, showNum = true) {
+  const num = showNum && Number.isFinite(change) ? ` <span class="muted">${change >= 0 ? '+' : ''}${fmt(change, 4)}</span>` : '';
+  const tip = rel.confidence === 'Conditional'
+    ? ' title="Relationship depends on moneyness / T / σ / rates. See live sensitivity chart."'
+    : '';
+  return `<span class="${rel.cls}"${tip}>${rel.arrow}</span>${num}`;
+}
+
+function renderDirectionTable() {
+  const d = displayOpts();
+  const greeks = CONFIG.GREEKS;
+  const rows = CONFIG.INPUTS;
+  let html = `<table class="matrix"><thead><tr><th class="sticky">Input ↑</th>${greeks.map(g => `<th>${g}</th>`).join('')}</tr></thead><tbody>`;
+  for (const v of rows) {
+    html += `<tr><td class="sticky">${v} ↑</td>`;
+    for (const g of greeks) {
+      // Use relative bump
+      let h;
+      const p = State.params;
+      if (v === 'S') h = p.S * 0.01;
+      else if (v === 'K') h = p.K * 0.01;
+      else if (v === 'sigma') h = 0.01;
+      else if (v === 'T') h = Math.max(p.T * 0.05, 1 / State.dayCount);
+      else h = 0.01;
+      const s = sensitivity(p, v, g, h, d);
+      const conf = relationshipConfidence(p, v, g, d);
+      // Prefer local arrow but override with ± if conditional across probes
+      let rel = classifyDirection(s.change, s.baseVal);
+      if (conf.arrow === '±') rel = conf;
+      else rel.confidence = conf.confidence;
+      html += `<td class="cell" data-v="${v}" data-g="${g}">${arrowCell(rel, s.change)}</td>`;
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  document.getElementById('directionTableWrap').innerHTML = html;
+}
+
+function knownIdentity(out, inp) {
+  const map = {
+    'delta|S': 'Gamma (∂Δ/∂S)',
+    'delta|sigma': 'Vanna (∂Δ/∂σ)',
+    'vega|S': 'Vanna (∂Vega/∂S)',
+    'vega|sigma': 'Vomma (∂Vega/∂σ)',
+    'gamma|S': 'Speed (∂Γ/∂S)',
+    'gamma|T': '−Color (since Color=∂Γ/∂t=−∂Γ/∂T)',
+    'vomma|sigma': 'Ultima',
+    'price|S': 'Delta',
+    'price|sigma': 'Vega',
+    'price|T': '∂V/∂T = −Theta_calendar',
+    'price|r': 'Rho',
+    'delta|T': '∂Δ/∂T = −Charm'
+  };
+  return map[`${out}|${inp}`] || 'Numerical ∂Greek/∂Input via central difference';
+}
+
+function renderCrossDeriv() {
+  const out = document.getElementById('xdOut').value;
+  const inp = document.getElementById('xdIn').value;
+  const d = displayOpts();
+  const num = centralDiff(State.params, inp, out, d);
+  const res = calculateBSM(State.params);
+  let analytical = null;
+  if (out === 'delta' && inp === 'S') analytical = res.gamma;
+  if (out === 'delta' && inp === 'sigma') analytical = res.vanna;
+  if (out === 'vega' && inp === 'S') analytical = res.vanna;
+  if (out === 'vega' && inp === 'sigma') analytical = res.vomma;
+  if (out === 'gamma' && inp === 'S') analytical = res.speed;
+  if (out === 'price' && inp === 'S') analytical = res.delta;
+  if (out === 'price' && inp === 'sigma') analytical = getMetric(res, 'vega', d);
+  if (out === 'price' && inp === 'r') analytical = getMetric(res, 'rho', d);
+  if (out === 'vomma' && inp === 'sigma') analytical = res.ultima;
+
+  document.getElementById('crossDerivPanel').innerHTML = `
+    <div><strong>∂${out}/∂${inp}</strong></div>
+    <div class="muted">${knownIdentity(out, inp)}</div>
+    <pre>Numerical (central FD): ${fmt(num, 6)}
+${analytical != null ? `Analytical identity:   ${fmt(analytical, 6)}\nAbs error: ${fmt(Math.abs(num - analytical), 6)}` : 'No direct named identity — FD only.'}</pre>`;
+}
+
+function renderSecondOrder() {
+  const d = displayOpts();
+  const rows = ['delta','gamma','vega','theta','rho'];
+  const cols = CONFIG.INPUTS;
+  let html = `<table class="matrix"><thead><tr><th class="sticky">Greek \\ Input</th>${cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead><tbody>`;
+  for (const g of rows) {
+    html += `<tr><td class="sticky">${g}</td>`;
+    for (const v of cols) {
+      const deriv = centralDiff(State.params, v, g, d);
+      const dir = classifyDirection(deriv, 0, { flatAbs: 1e-8 });
+      // For derivative, sign of derivative itself
+      let arrow = '→', cls = 'arrow-flat';
+      if (Number.isFinite(deriv)) {
+        if (Math.abs(deriv) < 1e-8) { arrow = '→'; cls = 'arrow-flat'; }
+        else if (deriv > 0) { arrow = '↑'; cls = 'arrow-up'; }
+        else { arrow = '↓'; cls = 'arrow-down'; }
+      } else { arrow = '±'; cls = 'arrow-cond'; }
+      html += `<td><span class="${cls}">${arrow}</span> <span class="muted">${fmt(deriv, 4)}</span></td>`;
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  document.getElementById('secondOrderWrap').innerHTML = html;
+}
+
+// ===============================
+// CHARTS
+// ===============================
+function destroyChart(key) {
+  if (State.charts[key]) {
+    try { State.charts[key].destroy(); } catch (e) {}
+    State.charts[key] = null;
+  }
+}
+
+function defaultSensRange(variable) {
+  const p = State.params;
+  switch (variable) {
+    case 'S': return { min: p.S * 0.7, max: p.S * 1.3 };
+    case 'K': return { min: p.K * 0.7, max: p.K * 1.3 };
+    case 'sigma': return { min: Math.max(0.01, p.sigma - 0.25), max: p.sigma + 0.25 };
+    case 'T': return { min: CONFIG.EPS_T * 10, max: Math.max(p.T, 1 / State.dayCount) };
+    case 'r': return { min: p.r - 0.05, max: p.r + 0.05 };
+    case 'q': return { min: p.q - 0.05, max: p.q + 0.05 };
+    default: return { min: 0, max: 1 };
+  }
+}
+
+function linspace(a, b, n) {
+  const arr = [];
+  if (n < 2) return [a];
+  for (let i = 0; i < n; i++) arr.push(a + (b - a) * i / (n - 1));
+  return arr;
+}
+
+function buildSeries(variable, yKey, min, max, pts) {
+  const d = displayOpts();
+  const xs = linspace(min, max, pts);
+  const ys = xs.map(x => {
+    const p = { ...State.params, [variable]: x };
+    if (variable === 'T') p.T = clampPositive(x, CONFIG.EPS_T);
+    if (variable === 'sigma') p.sigma = clampPositive(x, CONFIG.EPS_SIGMA);
+    if (variable === 'S' || variable === 'K') p[variable] = clampPositive(x, 1e-8);
+    return getMetric(calculateBSM(p), yKey, d);
+  });
+  return { xs, ys };
+}
+
+function renderSensChart() {
+  const variable = State.sensVar;
+  const yKey = document.getElementById('sensY').value;
+  let min = +document.getElementById('sensMin').value;
+  let max = +document.getElementById('sensMax').value;
+  const pts = Math.min(201, Math.max(11, +document.getElementById('sensPts').value || 61));
+  if (!Number.isFinite(min) || !Number.isFinite(max) || min >= max) {
+    const r = defaultSensRange(variable);
+    min = r.min; max = r.max;
+    document.getElementById('sensMin').value = min;
+    document.getElementById('sensMax').value = max;
+  }
+
+  const canvas = document.getElementById('sensChart');
+  const fallback = document.getElementById('sensChartFallback');
+  const tableFb = document.getElementById('sensTableFallback');
+
+  if (!window.Chart) {
+    fallback.style.display = 'block';
+    tableFb.style.display = 'block';
+    const keys = yKey === 'all' ? CONFIG.PRIMARY : [yKey];
+    let html = '<table class="matrix"><thead><tr><th>' + variable + '</th>' + keys.map(k => `<th>${k}</th>`).join('') + '</tr></thead><tbody>';
+    const xs = linspace(min, max, Math.min(pts, 21));
+    for (const x of xs) {
+      const p = { ...State.params, [variable]: x };
+      const res = calculateBSM(p);
+      html += `<tr><td>${fmt(x,4)}</td>${keys.map(k => `<td>${fmt(getMetric(res,k,displayOpts()),4)}</td>`).join('')}</tr>`;
+    }
+    html += '</tbody></table>';
+    tableFb.innerHTML = html;
+    return;
+  }
+  fallback.style.display = 'none';
+  tableFb.style.display = 'none';
+  destroyChart('sens');
+
+  const colors = {
+    price: '#3d9cf0', delta: '#22c55e', gamma: '#f59e0b', vega: '#a78bfa',
+    theta: '#ef4444', rho: '#2dd4bf', lambda: '#94a3b8', charm: '#fb7185',
+    vanna: '#38bdf8', vomma: '#c084fc', speed: '#f97316', color: '#84cc16', ultima: '#e879f9'
+  };
+
+  let datasets = [];
+  if (yKey === 'all') {
+    for (const g of CONFIG.PRIMARY) {
+      const { xs, ys } = buildSeries(variable, g, min, max, pts);
+      datasets.push({
+        label: g,
+        data: xs.map((x, i) => ({ x, y: ys[i] })),
+        borderColor: colors[g],
+        backgroundColor: 'transparent',
+        pointRadius: 0,
+        borderWidth: 1.5,
+        yAxisID: g === 'gamma' ? 'y1' : 'y'
+      });
+    }
+  } else {
+    const { xs, ys } = buildSeries(variable, yKey, min, max, pts);
+    datasets.push({
+      label: yKey,
+      data: xs.map((x, i) => ({ x, y: ys[i] })),
+      borderColor: colors[yKey] || '#3d9cf0',
+      backgroundColor: 'transparent',
+      pointRadius: 0,
+      borderWidth: 2
+    });
+  }
+
+  State.charts.sens = new Chart(canvas, {
+    type: 'line',
+    data: { datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      scales: {
+        x: { type: 'linear', title: { display: true, text: variable, color: '#8b95a8' }, ticks: { color: '#8b95a8' }, grid: { color: '#1a2030' } },
+        y: { title: { display: true, text: yKey === 'all' ? 'Greeks' : yKey, color: '#8b95a8' }, ticks: { color: '#8b95a8' }, grid: { color: '#1a2030' } },
+        y1: yKey === 'all' ? { position: 'right', title: { display: true, text: 'gamma', color: '#f59e0b' }, ticks: { color: '#f59e0b' }, grid: { drawOnChartArea: false } } : undefined
+      },
+      plugins: { legend: { labels: { color: '#e6edf7' } } }
+    }
+  });
+}
+
+function renderMultiChart() {
+  if (!window.Chart) return;
+  destroyChart('multi');
+  const p = State.params;
+  const min = p.S * 0.7, max = p.S * 1.3, pts = 61;
+  const colors = { delta: '#22c55e', gamma: '#f59e0b', vega: '#a78bfa', theta: '#ef4444', rho: '#2dd4bf' };
+  const datasets = [];
+  for (const g of CONFIG.PRIMARY) {
+    if (!State.multiGreeks[g]) continue;
+    const { xs, ys } = buildSeries('S', g, min, max, pts);
+    datasets.push({
+      label: g,
+      data: xs.map((x, i) => ({ x, y: ys[i] })),
+      borderColor: colors[g],
+      pointRadius: 0,
+      borderWidth: 1.5,
+      yAxisID: (g === 'gamma') ? 'y1' : 'y'
+    });
+  }
+  State.charts.multi = new Chart(document.getElementById('multiChart'), {
+    type: 'line',
+    data: { datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      scales: {
+        x: { type: 'linear', title: { display: true, text: 'Spot S', color: '#8b95a8' }, ticks: { color: '#8b95a8' }, grid: { color: '#1a2030' } },
+        y: { ticks: { color: '#8b95a8' }, grid: { color: '#1a2030' } },
+        y1: { position: 'right', ticks: { color: '#f59e0b' }, grid: { drawOnChartArea: false } }
+      },
+      plugins: { legend: { labels: { color: '#e6edf7' } } }
+    }
+  });
+}
+
+function renderProfileChart() {
+  if (!window.Chart) return;
+  destroyChart('profile');
+  const d = displayOpts();
+  const base = State.params;
+  const F = base.S * Math.exp((base.r - base.q) * base.T);
+  const lfMin = -0.35, lfMax = 0.35, pts = 81;
+  const lfs = linspace(lfMin, lfMax, pts);
+  const datasets = [];
+  const colors = { delta: '#22c55e', gamma: '#f59e0b', vega: '#a78bfa', theta: '#ef4444', rho: '#2dd4bf' };
+  for (const g of CONFIG.PRIMARY) {
+    const data = lfs.map(lf => {
+      const K = F / Math.exp(lf);
+      const res = calculateBSM({ ...base, K });
+      let x = lf;
+      if (State.moneynessMode === 'spot') x = res.logSpotMoneyness;
+      if (State.moneynessMode === 'delta') x = res.delta;
+      return { x, y: getMetric(res, g, d) };
+    });
+    datasets.push({ label: g, data, borderColor: colors[g], pointRadius: 0, borderWidth: 1.5, yAxisID: g === 'gamma' ? 'y1' : 'y' });
+  }
+  // Regime markers as annotations via plugin-less vertical lines: skip; document thresholds in title
+  State.charts.profile = new Chart(document.getElementById('profileChart'), {
+    type: 'line',
+    data: { datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      scales: {
+        x: { type: 'linear', title: { display: true, text: State.moneynessMode === 'delta' ? 'Delta' : (State.moneynessMode === 'spot' ? 'ln(S/K)' : 'ln(F/K)'), color: '#8b95a8' }, ticks: { color: '#8b95a8' }, grid: { color: '#1a2030' } },
+        y: { ticks: { color: '#8b95a8' }, grid: { color: '#1a2030' } },
+        y1: { position: 'right', ticks: { color: '#f59e0b' }, grid: { drawOnChartArea: false } }
+      },
+      plugins: { legend: { labels: { color: '#e6edf7' } } }
+    }
+  });
+}
+
+function renderExpiryChart() {
+  if (!window.Chart) return;
+  destroyChart('expiry');
+  const d = displayOpts();
+  const Tmax = Math.max(State.params.T, 30 / 365);
+  const Ts = linspace(CONFIG.EPS_T * 50, Tmax, 61);
+  const colors = { delta: '#22c55e', gamma: '#f59e0b', vega: '#a78bfa', theta: '#ef4444', rho: '#2dd4bf' };
+  const datasets = CONFIG.PRIMARY.map(g => ({
+    label: g,
+    data: Ts.map(T => ({ x: T, y: getMetric(calculateBSM({ ...State.params, T }), g, d) })),
+    borderColor: colors[g], pointRadius: 0, borderWidth: 1.5,
+    yAxisID: g === 'gamma' ? 'y1' : 'y'
+  }));
+  State.charts.expiry = new Chart(document.getElementById('expiryChart'), {
+    type: 'line', data: { datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      scales: {
+        x: { type: 'linear', title: { display: true, text: 'T (years)', color: '#8b95a8' }, ticks: { color: '#8b95a8' }, grid: { color: '#1a2030' } },
+        y: { ticks: { color: '#8b95a8' }, grid: { color: '#1a2030' } },
+        y1: { position: 'right', ticks: { color: '#f59e0b' }, grid: { drawOnChartArea: false } }
+      },
+      plugins: { legend: { labels: { color: '#e6edf7' } } }
+    }
+  });
+}
+
+function renderVolChart() {
+  if (!window.Chart) return;
+  destroyChart('vol');
+  const d = displayOpts();
+  const sigs = linspace(0.05, 0.80, 61);
+  const keys = ['price', ...CONFIG.PRIMARY];
+  const colors = { price: '#3d9cf0', delta: '#22c55e', gamma: '#f59e0b', vega: '#a78bfa', theta: '#ef4444', rho: '#2dd4bf' };
+  const datasets = keys.map(g => ({
+    label: g,
+    data: sigs.map(sigma => ({ x: sigma, y: getMetric(calculateBSM({ ...State.params, sigma }), g, d) })),
+    borderColor: colors[g], pointRadius: 0, borderWidth: 1.5,
+    yAxisID: (g === 'gamma' || g === 'price') ? (g === 'gamma' ? 'y1' : 'y') : 'y'
+  }));
+  State.charts.vol = new Chart(document.getElementById('volChart'), {
+    type: 'line', data: { datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      scales: {
+        x: { type: 'linear', title: { display: true, text: 'σ (constant other BSM params)', color: '#8b95a8' }, ticks: { color: '#8b95a8' }, grid: { color: '#1a2030' } },
+        y: { ticks: { color: '#8b95a8' }, grid: { color: '#1a2030' } },
+        y1: { position: 'right', ticks: { color: '#f59e0b' }, grid: { drawOnChartArea: false } }
+      },
+      plugins: { legend: { labels: { color: '#e6edf7' } } }
+    }
+  });
+}
+
+function heatColor(t) {
+  // blue -> cyan -> yellow -> red
+  const c = Math.max(0, Math.min(1, t));
+  const r = Math.round(255 * Math.min(1, Math.max(0, c * 2 - 0.5)));
+  const g = Math.round(255 * Math.min(1, c < 0.5 ? c * 2 : (1 - c) * 2));
+  const b = Math.round(255 * Math.min(1, Math.max(0, 1 - c * 2)));
+  return `rgb(${r},${Math.max(g, 40)},${b})`;
+}
+
+function axisRange(v) {
+  return defaultSensRange(v);
+}
+
+function renderHeatmap() {
+  const canvas = document.getElementById('heatmapCanvas');
+  const ctx = canvas.getContext('2d');
+  const xVar = document.getElementById('hmX').value;
+  const yVar = document.getElementById('hmY').value;
+  const zKey = document.getElementById('hmZ').value;
+  const n = Math.min(80, Math.max(15, +document.getElementById('hmRes').value || 40));
+  const xr = axisRange(xVar);
+  const yr = axisRange(yVar);
+  const d = displayOpts();
+  const padL = 50, padR = 20, padT = 20, padB = 40;
+  const W = canvas.width, H = canvas.height;
+  ctx.fillStyle = '#0b0e14';
+  ctx.fillRect(0, 0, W, H);
+  const grid = [];
+  let zmin = Infinity, zmax = -Infinity;
+  for (let j = 0; j < n; j++) {
+    grid[j] = [];
+    const yv = yr.min + (yr.max - yr.min) * j / (n - 1);
+    for (let i = 0; i < n; i++) {
+      const xv = xr.min + (xr.max - xr.min) * i / (n - 1);
+      const p = { ...State.params, [xVar]: xv, [yVar]: yv };
+      const z = getMetric(calculateBSM(p), zKey, d);
+      grid[j][i] = z;
+      if (Number.isFinite(z)) { zmin = Math.min(zmin, z); zmax = Math.max(zmax, z); }
+    }
+  }
+  if (!Number.isFinite(zmin)) { zmin = 0; zmax = 1; }
+  if (zmax === zmin) zmax = zmin + 1e-9;
+  const cw = (W - padL - padR) / n;
+  const ch = (H - padT - padB) / n;
+  for (let j = 0; j < n; j++) {
+    for (let i = 0; i < n; i++) {
+      const t = (grid[j][i] - zmin) / (zmax - zmin);
+      ctx.fillStyle = Number.isFinite(grid[j][i]) ? heatColor(t) : '#333';
+      ctx.fillRect(padL + i * cw, padT + (n - 1 - j) * ch, cw + 0.5, ch + 0.5);
+    }
+  }
+  ctx.fillStyle = '#8b95a8';
+  ctx.font = '11px sans-serif';
+  ctx.fillText(`${xVar}: ${fmt(xr.min,3)} → ${fmt(xr.max,3)}`, padL, H - 12);
+  ctx.save();
+  ctx.translate(12, H / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText(`${yVar}: ${fmt(yr.min,3)} → ${fmt(yr.max,3)}`, 0, 0);
+  ctx.restore();
+  ctx.fillText(`${zKey}: [${fmt(zmin,4)}, ${fmt(zmax,4)}]`, padL, 14);
+}
+
+function renderSurface() {
+  const canvas = document.getElementById('surfaceCanvas');
+  const ctx = canvas.getContext('2d');
+  const zKey = document.getElementById('surfZ').value;
+  const n = 28;
+  const xr = axisRange('S');
+  const yr = axisRange('sigma');
+  const d = displayOpts();
+  const Z = [];
+  let zmin = Infinity, zmax = -Infinity;
+  for (let j = 0; j < n; j++) {
+    Z[j] = [];
+    const sigma = yr.min + (yr.max - yr.min) * j / (n - 1);
+    for (let i = 0; i < n; i++) {
+      const S = xr.min + (xr.max - xr.min) * i / (n - 1);
+      const z = getMetric(calculateBSM({ ...State.params, S, sigma }), zKey, d);
+      Z[j][i] = z;
+      if (Number.isFinite(z)) { zmin = Math.min(zmin, z); zmax = Math.max(zmax, z); }
+    }
+  }
+  if (zmax === zmin) zmax = zmin + 1;
+  const W = canvas.width, H = canvas.height;
+  ctx.fillStyle = '#0b0e14';
+  ctx.fillRect(0, 0, W, H);
+  const project = (i, j, z) => {
+    const x = i / (n - 1), y = j / (n - 1), zz = (z - zmin) / (zmax - zmin);
+    const px = W * 0.15 + x * W * 0.7 + y * W * 0.15;
+    const py = H * 0.75 - y * H * 0.45 - zz * H * 0.4 - x * H * 0.05;
+    return [px, py];
+  };
+  for (let j = 0; j < n - 1; j++) {
+    for (let i = 0; i < n - 1; i++) {
+      const p00 = project(i, j, Z[j][i]);
+      const p10 = project(i + 1, j, Z[j][i + 1]);
+      const p01 = project(i, j + 1, Z[j + 1][i]);
+      const p11 = project(i + 1, j + 1, Z[j + 1][i + 1]);
+      const t = ((Z[j][i] + Z[j][i+1] + Z[j+1][i] + Z[j+1][i+1]) / 4 - zmin) / (zmax - zmin);
+      ctx.beginPath();
+      ctx.moveTo(p00[0], p00[1]);
+      ctx.lineTo(p10[0], p10[1]);
+      ctx.lineTo(p11[0], p11[1]);
+      ctx.lineTo(p01[0], p01[1]);
+      ctx.closePath();
+      ctx.fillStyle = heatColor(t);
+      ctx.globalAlpha = 0.85;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+      ctx.stroke();
+    }
+  }
+  ctx.fillStyle = '#8b95a8';
+  ctx.font = '12px sans-serif';
+  ctx.fillText(`Surface: Z=${zKey}  X=S  Y=σ  range [${fmt(zmin,4)}, ${fmt(zmax,4)}]`, 16, 20);
+}
+
+// ===============================
+// RELATIONSHIP MATRIX
+// ===============================
+function buildMatrixForType(type) {
+  const greeks = CONFIG.GREEKS;
+  const inputs = CONFIG.INPUTS;
+  const dirs = [
+    { var: 'S', sign: +1, label: 'S ↑' },
+    { var: 'S', sign: -1, label: 'S ↓' },
+    { var: 'K', sign: +1, label: 'K ↑' },
+    { var: 'K', sign: -1, label: 'K ↓' },
+    { var: 'sigma', sign: +1, label: 'σ ↑' },
+    { var: 'sigma', sign: -1, label: 'σ ↓' },
+    { var: 'T', sign: +1, label: 'T ↑' },
+    { var: 'T', sign: -1, label: 'T ↓' },
+    { var: 'r', sign: +1, label: 'r ↑' },
+    { var: 'r', sign: -1, label: 'r ↓' },
+    { var: 'q', sign: +1, label: 'q ↑' },
+    { var: 'q', sign: -1, label: 'q ↓' }
+  ];
+  const d = displayOpts();
+  const regimes = {};
+  for (const reg of CONFIG.REGIMES) {
+    const rep = representativeParams(reg.id, type);
+    const table = [];
+    for (const dir of dirs) {
+      const row = { label: dir.label, var: dir.var, sign: dir.sign, cells: {} };
+      for (const g of greeks) {
+        let h;
+        if (dir.var === 'S') h = rep.S * 0.01 * dir.sign;
+        else if (dir.var === 'K') h = rep.K * 0.01 * dir.sign;
+        else if (dir.var === 'sigma') h = 0.01 * dir.sign;
+        else if (dir.var === 'T') h = Math.max(rep.T * 0.05, 1 / 365) * dir.sign;
+        else h = 0.01 * dir.sign;
+        const s = sensitivity(rep, dir.var, g, h, d);
+        // confidence on + direction only for marking conditional
+        const conf = relationshipConfidence(rep, dir.var, g, d);
+        let rel = classifyDirection(s.change, s.baseVal);
+        // If opposite direction of an increase that is conditional, still show local
+        if (dir.sign > 0 && conf.arrow === '±') {
+          rel = { arrow: '±', cls: 'arrow-cond', label: 'conditional' };
+          rel.confidence = 'Conditional';
+        } else if (dir.sign < 0 && conf.arrow === '±') {
+          rel = { arrow: '±', cls: 'arrow-cond', label: 'conditional' };
+          rel.confidence = 'Conditional';
+        } else {
+          rel.confidence = conf.confidence;
+        }
+        row.cells[g] = {
+          ...rel,
+          change: s.change,
+          baseVal: s.baseVal,
+          valUp: s.valUp,
+          h,
+          rep
+        };
+      }
+      table.push(row);
+    }
+    regimes[reg.id] = { rep, table, label: reg.label };
+  }
+  return { type, regimes, greeks, generatedAt: new Date().toISOString() };
+}
+
+function renderMatrixPage() {
+  const data = buildMatrixForType(State.matrixType);
+  State.lastMatrix = data;
+  // Master matrix for selected input
+  const inp = State.masterInput;
+  let html = `<table class="matrix"><thead><tr><th class="sticky">Regime</th>${data.greeks.map(g=>`<th>${g}</th>`).join('')}<th>Condition</th></tr></thead><tbody>`;
+  for (const reg of CONFIG.REGIMES) {
+    const row = data.regimes[reg.id].table.find(r => r.var === inp && r.sign > 0);
+    html += `<tr><td class="sticky">${reg.label}</td>`;
+    let worst = 'Universal';
+    for (const g of data.greeks) {
+      const c = row.cells[g];
+      if (c.confidence === 'Conditional') worst = 'Conditional';
+      else if (c.confidence === 'Typical' && worst === 'Universal') worst = 'Typical';
+      html += `<td class="cell" data-reg="${reg.id}" data-v="${inp}" data-g="${g}" data-sign="1">${arrowCell(c, c.change, false)} <span class="muted">${fmt(c.change,3)}</span></td>`;
+    }
+    html += `<td><span class="badge ${worst.toLowerCase()}">${worst}</span></td></tr>`;
+  }
+  html += '</tbody></table>';
+  document.getElementById('masterMatrixWrap').innerHTML = html;
+
+  // Per-regime tables
+  const wrap = document.getElementById('regimeMatrixSections');
+  wrap.innerHTML = CONFIG.REGIMES.map(reg => {
+    const block = data.regimes[reg.id];
+    const rep = block.rep;
+    let t = `<div class="section card"><h2>${reg.label} (${State.matrixType.toUpperCase()})</h2>
+      <p class="mono muted">Representative: S=${fmt(rep.S,2)} K=${fmt(rep.K,2)} σ=${fmt(rep.sigma,2)} T=${fmt(rep.T,4)} r=${fmt(rep.r,3)} q=${fmt(rep.q,3)}</p>
+      <div class="table-scroll"><table class="matrix"><thead><tr><th class="sticky">Input Change</th>${data.greeks.map(g=>`<th>${g}</th>`).join('')}</tr></thead><tbody>`;
+    for (const row of block.table) {
+      t += `<tr><td class="sticky">${row.label}</td>`;
+      for (const g of data.greeks) {
+        const c = row.cells[g];
+        t += `<td class="cell" data-reg="${reg.id}" data-v="${row.var}" data-g="${g}" data-sign="${row.sign}">${arrowCell(c, c.change)} <span class="badge ${ (c.confidence||'Typical').toLowerCase()}">${c.confidence||''}</span></td>`;
+      }
+      t += '</tr>';
+    }
+    t += `</tbody></table></div>
+      <p class="footnote">Directional arrows describe the local BSM sensitivity around the representative scenario. Higher-order Greek relationships can change sign across parameter space; cells marked ± are conditional rather than universally monotonic.</p>
+      <p class="muted" style="margin-top:6px;">${REGIME_EXPLAIN[State.matrixType][reg.id]}</p>
+    </div>`;
+    return t;
+  }).join('');
+
+  wrap.querySelectorAll('td.cell').forEach(td => td.addEventListener('click', onMatrixCellClick));
+  document.querySelectorAll('#masterMatrixWrap td.cell').forEach(td => td.addEventListener('click', onMatrixCellClick));
+}
+
+function onMatrixCellClick(e) {
+  const td = e.currentTarget;
+  const reg = td.dataset.reg;
+  const v = td.dataset.v;
+  const g = td.dataset.g;
+  const sign = +td.dataset.sign;
+  const data = State.lastMatrix;
+  if (!data) return;
+  const row = data.regimes[reg].table.find(r => r.var === v && r.sign === sign);
+  const cell = row.cells[g];
+  const identity = knownIdentity(g, v);
+  document.getElementById('matrixCellDetail').innerHTML = `
+    <strong>${row.label} → ${g} ${cell.arrow}</strong>
+    <pre>Mathematical relationship:
+  ∂${g}/∂${v}  (~ ${identity})
+
+Representative params:
+  ${JSON.stringify(cell.rep)}
+
+Baseline ${g}: ${fmt(cell.baseVal, 6)}
+Perturbed ${g}: ${fmt(cell.valUp, 6)}
+Change: ${fmt(cell.change, 6)}  (h=${fmt(cell.h, 6)})
+
+Confidence: ${cell.confidence}
+Interpretation: ${cell.arrow === '±' ? 'Sign depends on moneyness / T / σ / rates. Inspect Sensitivity Lab charts.' :
+  cell.arrow === '↑' ? `Increasing ${v} locally increases ${g}.` :
+  cell.arrow === '↓' ? `Increasing ${v} locally decreases ${g}.` :
+  `${g} is approximately unchanged for a small move in ${v}.`}</pre>`;
+}
+
+// ===============================
+// VALIDATION / TESTS
+// ===============================
+function almostEqual(a, b, absTol, relTol) {
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
+  const diff = Math.abs(a - b);
+  if (diff <= absTol) return true;
+  const scale = Math.max(Math.abs(a), Math.abs(b), 1e-12);
+  return diff / scale <= relTol;
+}
+
+function runTestSuite() {
+  const results = [];
+  const add = (name, pass, detail) => results.push({ name, pass, detail });
+
+  // Pricing reference: S=100,K=100,σ=0.2,T=1,r=0.05,q=0
+  // Known approximate values
+  const base = { S: 100, K: 100, sigma: 0.2, T: 1, r: 0.05, q: 0, type: 'call' };
+  const call = calculateBSM(base);
+  const put = calculateBSM({ ...base, type: 'put' });
+
+  add('Call price finite', Number.isFinite(call.price) && call.price > 0, fmt(call.price));
+  add('Put price finite', Number.isFinite(put.price) && put.price > 0, fmt(put.price));
+
+  // Put-call parity
+  const lhs = call.call - call.put;
+  const rhs = call.S * call.discountQ - call.K * call.discountR;
+  add('Put-call parity', Math.abs(lhs - rhs) < 1e-9, `diff=${lhs - rhs}`);
+
+  // ATM call delta ~ 0.5+ when r>q
+  add('ATM call delta in (0,1)', call.delta > 0.5 && call.delta < 1, fmt(call.delta));
+  add('Gamma > 0', call.gamma > 0, fmt(call.gamma));
+  add('Vega > 0', call.vega > 0, fmt(call.vega));
+
+  // FD validation helpers
+  const checkFD = (label, params, greek, analyticalFn, absTol, relTol) => {
+    const res = calculateBSM(params);
+    const anal = analyticalFn(res);
+    let num;
+    if (greek === 'delta') num = centralDiff(params, 'S', 'price');
+    else if (greek === 'gamma') {
+      const h = stepSize(params, 'S');
+      const up = getMetric(calculateBSM(bumpParams(params,'S',h)), 'delta');
+      const dn = getMetric(calculateBSM(bumpParams(params,'S',-h)), 'delta');
+      num = (up - dn) / (2 * h);
+    } else if (greek === 'vega') num = centralDiff(params, 'sigma', 'price');
+    else if (greek === 'theta') {
+      // calendar theta = −∂V/∂T
+      num = -centralDiff(params, 'T', 'price');
+    } else if (greek === 'rho') num = centralDiff(params, 'r', 'price');
+    else if (greek === 'vanna') num = centralDiff(params, 'sigma', 'delta');
+    else if (greek === 'vomma') num = centralDiff(params, 'sigma', 'vega');
+    else if (greek === 'speed') num = centralDiff(params, 'S', 'gamma');
+    else if (greek === 'charm') num = -centralDiff(params, 'T', 'delta');
+    else if (greek === 'color') num = -centralDiff(params, 'T', 'gamma');
+    else if (greek === 'ultima') num = centralDiff(params, 'sigma', 'vomma');
+    const pass = almostEqual(anal, num, absTol, relTol);
+    add(label, pass, `anal=${fmt(anal,6)} num=${fmt(num,6)} err=${fmt(Math.abs(anal-num),6)}`);
+  };
+
+  const scenarios = [
+    { name: 'ATM', p: { S: 100, K: 100, sigma: 0.2, T: 30/365, r: 0.05, q: 0, type: 'call' } },
+    { name: 'Deep ITM call', p: representativeParams('deep_itm', 'call') },
+    { name: 'Deep OTM call', p: representativeParams('deep_otm', 'call') },
+    { name: 'Near expiry', p: { S: 100, K: 100, sigma: 0.2, T: 2/365, r: 0.05, q: 0, type: 'call' } },
+    { name: 'High vol', p: { S: 100, K: 100, sigma: 0.8, T: 0.5, r: 0.05, q: 0, type: 'call' } },
+    { name: 'Low vol', p: { S: 100, K: 100, sigma: 0.05, T: 0.5, r: 0.05, q: 0, type: 'call' } },
+    { name: 'High dividend', p: { S: 100, K: 100, sigma: 0.2, T: 1, r: 0.05, q: 0.08, type: 'call' } },
+    { name: 'Zero dividend put', p: { S: 100, K: 100, sigma: 0.2, T: 1, r: 0.05, q: 0, type: 'put' } }
+  ];
+
+  for (const sc of scenarios) {
+    checkFD(`${sc.name} Delta`, sc.p, 'delta', r => r.delta, 5e-3, 0.02);
+    checkFD(`${sc.name} Gamma`, sc.p, 'gamma', r => r.gamma, 5e-4, 0.05);
+    checkFD(`${sc.name} Vega`, sc.p, 'vega', r => r.vega, 5e-3, 0.02);
+    checkFD(`${sc.name} Theta`, sc.p, 'theta', r => r.theta, 5e-2, 0.08);
+    checkFD(`${sc.name} Rho`, sc.p, 'rho', r => r.rho, 5e-3, 0.02);
+  }
+
+  // Higher greeks on a few scenarios
+  for (const sc of scenarios.slice(0, 4)) {
+    checkFD(`${sc.name} Vanna`, sc.p, 'vanna', r => r.vanna, 5e-2, 0.08);
+    checkFD(`${sc.name} Vomma`, sc.p, 'vomma', r => r.vomma, 5e-2, 0.08);
+    checkFD(`${sc.name} Speed`, sc.p, 'speed', r => r.speed, 5e-4, 0.1);
+    checkFD(`${sc.name} Charm`, sc.p, 'charm', r => r.charm, 0.5, 0.15);
+    checkFD(`${sc.name} Color`, sc.p, 'color', r => r.color, 0.5, 0.2);
+    checkFD(`${sc.name} Ultima`, sc.p, 'ultima', r => r.ultima, 1.0, 0.25);
+  }
+
+  // Edge: no NaN under normal inputs
+  let nanLeak = false;
+  for (const sc of scenarios) {
+    const r = calculateBSM(sc.p);
+    for (const g of CONFIG.GREEKS) {
+      if (isBad(r[g]) && g !== 'lambda') nanLeak = true;
+    }
+  }
+  add('No NaN/Inf in primary scenarios', !nanLeak, nanLeak ? 'leak detected' : 'clean');
+
+  // Moneyness classification
+  let mPass = true;
+  for (const reg of CONFIG.REGIMES) {
+    const p = representativeParams(reg.id, 'call');
+    const c = classifyMoneyness(calculateBSM(p));
+    if (c.id !== reg.id) { mPass = false; add(`Moneyness ${reg.id}`, false, `got ${c.id}`); }
+  }
+  if (mPass) add('Moneyness classification (7 regimes)', true, 'all matched');
+
+  // Call/put gamma/vega identity
+  const cc = calculateBSM({ ...base, type: 'call' });
+  const pp = calculateBSM({ ...base, type: 'put' });
+  add('Gamma call=put', almostEqual(cc.gamma, pp.gamma, 1e-10, 1e-10), '');
+  add('Vega call=put', almostEqual(cc.vega, pp.vega, 1e-10, 1e-10), '');
+
+  State.validation = results;
+  return results;
+}
+
+function renderValidation() {
+  const results = State.validation || runTestSuite();
+  const passed = results.filter(r => r.pass).length;
+  const failed = results.length - passed;
+  const ok = failed === 0;
+  document.getElementById('modelStatus').textContent = ok ? 'Model Status: VALIDATED' : `Model Status: WARNING (${failed} failed)`;
+  document.getElementById('modelStatus').className = 'status-pill ' + (ok ? 'ok' : 'warn');
+
+  document.getElementById('validationSummary').innerHTML = `
+    <p><strong>${passed}/${results.length} passed</strong></p>
+    <pre class="mono">BSM Engine: ${results.find(r=>r.name.includes('Call price'))?.pass && results.find(r=>r.name.includes('Put price'))?.pass ? 'PASS' : 'FAIL'}
+Primary Greeks: ${results.filter(r=>/Delta|Gamma|Vega|Theta|Rho/.test(r.name) && r.name.includes('ATM')).every(r=>r.pass) ? 'PASS' : 'FAIL'}
+Higher Greeks: ${results.filter(r=>/Vanna|Vomma|Speed|Charm|Color|Ultima/.test(r.name)).filter(r=>r.pass).length}/${results.filter(r=>/Vanna|Vomma|Speed|Charm|Color|Ultima/.test(r.name)).length} checks
+Put-Call Parity: ${results.find(r=>r.name==='Put-call parity')?.pass ? 'PASS' : 'FAIL'}
+Moneyness: ${results.find(r=>r.name.startsWith('Moneyness classification'))?.pass ? 'PASS' : 'FAIL'}
+Edge/NaN: ${results.find(r=>r.name.startsWith('No NaN'))?.pass ? 'PASS' : 'FAIL'}
+Overall: ${ok ? 'PASS' : 'FAIL'}</pre>`;
+
+  document.getElementById('testLog').innerHTML = results.map(r =>
+    `<div class="${r.pass ? 'pass' : 'fail'}">${r.pass ? 'PASS' : 'FAIL'} — ${r.name}${r.detail ? ' · ' + r.detail : ''}</div>`
+  ).join('');
+
+  // Analytical vs numerical for current params
+  renderAnalNumTable();
+}
+
+function renderAnalNumTable() {
+  readInputsToState();
+  const p = State.params;
+  const res = calculateBSM(p);
+  const rows = [
+    ['Delta', res.delta, centralDiff(p, 'S', 'price')],
+    ['Gamma', res.gamma, (() => { const h = stepSize(p,'S'); return (greekValue(bumpParams(p,'S',h),'delta') - greekValue(bumpParams(p,'S',-h),'delta')) / (2*h); })()],
+    ['Vega', res.vega, centralDiff(p, 'sigma', 'price')],
+    ['Theta', res.theta, -centralDiff(p, 'T', 'price')],
+    ['Rho', res.rho, centralDiff(p, 'r', 'price')],
+    ['Vanna', res.vanna, centralDiff(p, 'sigma', 'delta')],
+    ['Vomma', res.vomma, centralDiff(p, 'sigma', 'vega')],
+    ['Speed', res.speed, centralDiff(p, 'S', 'gamma')],
+    ['Charm', res.charm, -centralDiff(p, 'T', 'delta')],
+    ['Color', res.color, -centralDiff(p, 'T', 'gamma')],
+    ['Ultima', res.ultima, centralDiff(p, 'sigma', 'vomma')]
+  ];
+  let html = `<table class="matrix"><thead><tr><th class="sticky">Greek</th><th>Analytical</th><th>Numerical FD</th><th>Abs Err</th><th>Rel Err</th><th>Status</th></tr></thead><tbody>`;
+  for (const [name, anal, num] of rows) {
+    const abs = Math.abs(anal - num);
+    const rel = abs / Math.max(Math.abs(anal), 1e-12);
+    const pass = almostEqual(anal, num, CONFIG.FD_TOL_ABS, CONFIG.FD_TOL_REL) || almostEqual(anal, num, 0.5, 0.2);
+    html += `<tr><td class="sticky">${name}</td><td>${fmt(anal,6)}</td><td>${fmt(num,6)}</td><td>${fmt(abs,6)}</td><td>${fmtPct(rel)}</td><td class="${pass?'pass':'warn'}">${pass?'PASS':'WARNING'}</td></tr>`;
+  }
+  html += '</tbody></table>';
+  document.getElementById('analNumWrap').innerHTML = html;
+}
+
+// ===============================
+// EXPORT
+// ===============================
+function exportJSON() {
+  readInputsToState();
+  const res = calculateBSM(State.params);
+  const payload = {
+    params: State.params,
+    greeks: Object.fromEntries(CONFIG.GREEKS.map(g => [g, res[g]])),
+    moneyness: classifyMoneyness(res),
+    forward: res.forward, d1: res.d1, d2: res.d2,
+    exportedAt: new Date().toISOString()
+  };
+  downloadBlob(JSON.stringify(payload, null, 2), 'bsm-greeks.json', 'application/json');
+}
+
+function exportCSV() {
+  readInputsToState();
+  const res = calculateBSM(State.params);
+  const lines = ['metric,value'];
+  for (const g of CONFIG.GREEKS) lines.push(`${g},${res[g]}`);
+  lines.push(`forward,${res.forward}`, `d1,${res.d1}`, `d2,${res.d2}`);
+  downloadBlob(lines.join('\n'), 'bsm-greeks.csv', 'text/csv');
+}
+
+function exportMatrixJSON() {
+  if (!State.lastMatrix) renderMatrixPage();
+  downloadBlob(JSON.stringify(State.lastMatrix, null, 2), 'bsm-relationship-matrix.json', 'application/json');
+}
+
+function downloadBlob(text, filename, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// ===============================
+// PRESETS & REGIMES UI
+// ===============================
+const PRESETS = [
+  { id: 'atm', label: 'ATM', apply: () => Object.assign(State.params, representativeParams('atm', State.params.type)) },
+  { id: 'dditm', label: 'Deep Deep ITM', apply: () => Object.assign(State.params, representativeParams('deep_deep_itm', State.params.type)) },
+  { id: 'ditm', label: 'Deep ITM', apply: () => Object.assign(State.params, representativeParams('deep_itm', State.params.type)) },
+  { id: 'itm', label: 'ITM', apply: () => Object.assign(State.params, representativeParams('itm', State.params.type)) },
+  { id: 'otm', label: 'OTM', apply: () => Object.assign(State.params, representativeParams('otm', State.params.type)) },
+  { id: 'dotm', label: 'Deep OTM', apply: () => Object.assign(State.params, representativeParams('deep_otm', State.params.type)) },
+  { id: 'ddotm', label: 'Deep Deep OTM', apply: () => Object.assign(State.params, representativeParams('deep_deep_otm', State.params.type)) },
+  { id: 'near', label: 'Near Expiry', apply: () => { State.params.T = 2 / State.dayCount; } },
+  { id: 'long', label: 'Long Dated', apply: () => { State.params.T = 2; } },
+  { id: 'lowvol', label: 'Low Vol', apply: () => { State.params.sigma = 0.08; } },
+  { id: 'hivol', label: 'High Vol', apply: () => { State.params.sigma = 0.60; } },
+  { id: 'hirate', label: 'High Rate', apply: () => { State.params.r = 0.10; } },
+  { id: 'lorate', label: 'Low Rate', apply: () => { State.params.r = 0.01; } },
+  { id: 'hidiv', label: 'High Dividend', apply: () => { State.params.q = 0.06; } },
+  { id: 'zerodiv', label: 'Zero Dividend', apply: () => { State.params.q = 0; } }
+];
+
+function initPresets() {
+  document.getElementById('presetBtns').innerHTML = PRESETS.map(p =>
+    `<button class="btn sm" data-preset="${p.id}">${p.label}</button>`
+  ).join('');
+  document.getElementById('presetBtns').addEventListener('click', e => {
+    const btn = e.target.closest('[data-preset]');
+    if (!btn) return;
+    const pr = PRESETS.find(x => x.id === btn.dataset.preset);
+    if (!pr) return;
+    readInputsToState();
+    pr.apply();
+    writeStateToInputs();
+    refreshAll();
+  });
+
+  document.getElementById('regimeCards').innerHTML = CONFIG.REGIMES.map(r =>
+    `<div class="regime" data-id="${r.id}"><span class="rn">${r.short}</span>${r.label}</div>`
+  ).join('');
+  document.getElementById('regimeCards').addEventListener('click', e => {
+    const el = e.target.closest('.regime');
+    if (!el) return;
+    State.pendingRegime = el.dataset.id;
+    document.getElementById('pendingRegime').textContent = `Selected: ${el.dataset.id} (click Load Example)`;
+  });
+  document.getElementById('btnLoadExample').addEventListener('click', () => {
+    if (!State.pendingRegime) {
+      alert('Select a moneyness regime card first.');
+      return;
+    }
+    if (!confirm('Load representative example parameters for ' + State.pendingRegime + '? This overwrites S/K (forward-aligned).')) return;
+    Object.assign(State.params, representativeParams(State.pendingRegime, State.params.type));
+    writeStateToInputs();
+    refreshAll();
+  });
+}
+
+function initMultiToggles() {
+  const wrap = document.getElementById('multiGreekToggles');
+  wrap.innerHTML = CONFIG.PRIMARY.map(g =>
+    `<label><input type="checkbox" data-g="${g}" ${State.multiGreeks[g]?'checked':''}/> ${g}</label>`
+  ).join('');
+  wrap.addEventListener('change', e => {
+    const cb = e.target;
+    if (cb.dataset.g) {
+      State.multiGreeks[cb.dataset.g] = cb.checked;
+      renderMultiChart();
+    }
+  });
+}
+
+function refreshAll() {
+  renderMetrics();
+  renderSensChart();
+  renderMultiChart();
+  renderProfileChart();
+  renderExpiryChart();
+  renderVolChart();
+  renderHeatmap();
+  renderSurface();
+  renderCrossDeriv();
+  renderSecondOrder();
+}
+
+function debouncedRefresh() {
+  clearTimeout(State.debounceTimer);
+  State.debounceTimer = setTimeout(refreshAll, 120);
+}
+
+// ===============================
+// UI WIRING
+// ===============================
+function initNav() {
+  document.getElementById('mainNav').addEventListener('click', e => {
+    const btn = e.target.closest('button[data-page]');
+    if (!btn) return;
+    document.querySelectorAll('#mainNav button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.getElementById('page-' + btn.dataset.page).classList.add('active');
+    if (btn.dataset.page === 'matrix') renderMatrixPage();
+    if (btn.dataset.page === 'validation') renderValidation();
+    if (btn.dataset.page === 'about' && window.MathJax?.typesetPromise) {
+      MathJax.typesetPromise().catch(() => {});
+    }
+  });
+}
+
+function initControls() {
+  document.getElementById('optTypeSeg').addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    State.params.type = b.dataset.type;
+    document.querySelectorAll('#optTypeSeg button').forEach(x => x.classList.toggle('active', x === b));
+    refreshAll();
+  });
+  document.getElementById('dayCountSeg').addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    State.dayCount = +b.dataset.dc;
+    document.querySelectorAll('#dayCountSeg button').forEach(x => x.classList.toggle('active', x === b));
+    refreshAll();
+  });
+  document.getElementById('unitSeg').addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    State.unitMode = b.dataset.unit;
+    document.querySelectorAll('#unitSeg button').forEach(x => x.classList.toggle('active', x === b));
+    refreshAll();
+  });
+  document.getElementById('thetaSeg').addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    State.thetaMode = b.dataset.theta;
+    document.querySelectorAll('#thetaSeg button').forEach(x => x.classList.toggle('active', x === b));
+    refreshAll();
+  });
+  document.getElementById('sensVarSeg').addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    State.sensVar = b.dataset.var;
+    document.querySelectorAll('#sensVarSeg button').forEach(x => x.classList.toggle('active', x === b));
+    const r = defaultSensRange(State.sensVar);
+    document.getElementById('sensMin').value = r.min;
+    document.getElementById('sensMax').value = r.max;
+    renderSensChart();
+  });
+  document.getElementById('btnResetSensRange').addEventListener('click', () => {
+    const r = defaultSensRange(State.sensVar);
+    document.getElementById('sensMin').value = r.min;
+    document.getElementById('sensMax').value = r.max;
+    renderSensChart();
+  });
+  document.getElementById('sensY').addEventListener('change', renderSensChart);
+  ['sensMin','sensMax','sensPts'].forEach(id => document.getElementById(id).addEventListener('change', renderSensChart));
+
+  document.getElementById('moneynessModeSeg').addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    State.moneynessMode = b.dataset.mm;
+    document.querySelectorAll('#moneynessModeSeg button').forEach(x => x.classList.toggle('active', x === b));
+    renderProfileChart();
+  });
+
+  document.getElementById('btnApplyExpiry').addEventListener('click', () => {
+    const days = +document.getElementById('inpDays').value;
+    if (days > 0) {
+      State.params.T = days / State.dayCount;
+      writeStateToInputs();
+      refreshAll();
+    }
+  });
+  document.getElementById('inpExpiry').addEventListener('change', e => {
+    const d = new Date(e.target.value + 'T00:00:00');
+    if (isNaN(d)) return;
+    const now = new Date();
+    const ms = d - now;
+    const days = Math.max(1, Math.round(ms / 86400000));
+    document.getElementById('inpDays').value = days;
+    State.params.T = days / State.dayCount;
+    writeStateToInputs();
+    refreshAll();
+  });
+  document.getElementById('inpDays').addEventListener('change', () => {
+    const days = +document.getElementById('inpDays').value;
+    if (days > 0) {
+      State.params.T = days / State.dayCount;
+      document.getElementById('inpT').value = State.params.T;
+      debouncedRefresh();
+    }
+  });
+
+  ['inpS','inpK','inpSigma','inpT','inpR','inpQ'].forEach(id => {
+    document.getElementById(id).addEventListener('input', debouncedRefresh);
+  });
+  ['thAtm','thDeep','thDeepDeep'].forEach(id => {
+    document.getElementById(id).addEventListener('change', () => {
+      CONFIG.THRESHOLDS.atm = +document.getElementById('thAtm').value;
+      CONFIG.THRESHOLDS.deep = +document.getElementById('thDeep').value;
+      CONFIG.THRESHOLDS.deepDeep = +document.getElementById('thDeepDeep').value;
+      refreshAll();
+    });
+  });
+
+  document.getElementById('btnRenderHeatmap').addEventListener('click', renderHeatmap);
+  document.getElementById('btnRenderSurface').addEventListener('click', renderSurface);
+  document.getElementById('xdOut').addEventListener('change', renderCrossDeriv);
+  document.getElementById('xdIn').addEventListener('change', renderCrossDeriv);
+
+  document.getElementById('btnExportCSV').addEventListener('click', exportCSV);
+  document.getElementById('btnExportJSON').addEventListener('click', exportJSON);
+  document.getElementById('btnPrint').addEventListener('click', () => window.print());
+  document.getElementById('btnRunTests').addEventListener('click', () => { runTestSuite(); renderValidation(); });
+  document.getElementById('btnRebuildMatrix').addEventListener('click', renderMatrixPage);
+  document.getElementById('btnExportMatrix').addEventListener('click', exportMatrixJSON);
+
+  document.getElementById('matrixTypeSeg').addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    State.matrixType = b.dataset.type;
+    document.querySelectorAll('#matrixTypeSeg button').forEach(x => x.classList.toggle('active', x === b));
+    renderMatrixPage();
+  });
+
+  document.getElementById('masterInputTabs').innerHTML = CONFIG.INPUTS.map((v,i) =>
+    `<button class="btn sm ${v==='S'?'primary':''}" data-mi="${v}">${v} ↑</button>`
+  ).join('');
+  document.getElementById('masterInputTabs').addEventListener('click', e => {
+    const b = e.target.closest('[data-mi]');
+    if (!b) return;
+    State.masterInput = b.dataset.mi;
+    document.querySelectorAll('#masterInputTabs button').forEach(x => x.classList.toggle('primary', x === b));
+    renderMatrixPage();
+  });
+}
+
+function boot() {
+  initNav();
+  initPresets();
+  initMultiToggles();
+  initControls();
+  writeStateToInputs();
+  const r = defaultSensRange('S');
+  document.getElementById('sensMin').value = r.min;
+  document.getElementById('sensMax').value = r.max;
+  runTestSuite();
+  const failed = State.validation.filter(x => !x.pass).length;
+  document.getElementById('modelStatus').textContent = failed === 0 ? 'Model Status: VALIDATED' : `Model Status: WARNING (${failed})`;
+  document.getElementById('modelStatus').className = 'status-pill ' + (failed === 0 ? 'ok' : 'warn');
+  refreshAll();
+}
+
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+else boot();
+</script>
+</body>
+</html>
