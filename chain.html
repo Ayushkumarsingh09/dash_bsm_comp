@@ -1,0 +1,1421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>BSM Chain Workbook</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"
+  onerror="console.warn('SheetJS CDN failed')"></script>
+<style>
+:root {
+  --bg: #eef1f6; --panel: #fff; --ink: #0f172a; --muted: #64748b;
+  --line: #d8dee8; --yellow: #fff3bf; --yellow-b: #e6d27a;
+  --call: #1d4ed8; --put: #b45309; --itm: #1d4ed8; --atm: #b45309; --otm: #64748b;
+  --accent: #2563eb; --ok: #15803d; --bad: #b91c1c;
+  --font: "Segoe UI", system-ui, sans-serif; --mono: "Cascadia Mono", Consolas, monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: var(--font); background: var(--bg); color: var(--ink); font-size: 13px; }
+a { color: #93c5fd; text-decoration: none; }
+.topbar {
+  background: #0f172a; color: #e2e8f0; padding: 10px 16px;
+  display: flex; align-items: center; gap: 14px; position: sticky; top: 0; z-index: 40;
+}
+.brand { font-weight: 700; letter-spacing: .03em; } .brand span { color: #93c5fd; }
+.topbar .meta { color: #94a3b8; font-size: 12px; margin-left: auto; }
+
+.toolbar {
+  background: var(--panel); border-bottom: 1px solid var(--line);
+  padding: 8px 16px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+}
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button {
+  border: none; background: #fff; padding: 6px 12px; cursor: pointer; color: var(--muted); font-size: 12px;
+}
+.seg button.on { background: #1e293b; color: #fff; }
+.toolbar .status {
+  margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--muted);
+  background: #f8fafc; border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px;
+}
+
+.panel {
+  display: none; background: var(--panel); border-bottom: 1px solid var(--line);
+  padding: 12px 16px;
+}
+.panel.on { display: block; }
+.grid-params {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; align-items: end;
+}
+.grid-sliders {
+  display: grid; grid-template-columns: repeat(3, minmax(180px, 1fr)); gap: 12px 18px;
+}
+@media (max-width: 900px) { .grid-sliders { grid-template-columns: 1fr; } }
+.field label {
+  display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--muted); font-weight: 600; margin-bottom: 3px;
+}
+.field input, .field select {
+  width: 100%; border: 1px solid var(--line); border-radius: 5px; padding: 7px 8px;
+  font-family: var(--mono); background: #fff;
+}
+.field input.y { background: var(--yellow); border-color: var(--yellow-b); }
+.slider-row { display: flex; align-items: center; gap: 8px; }
+.slider-row input[type=range] { flex: 1; accent-color: var(--accent); }
+.slider-row .val { font-family: var(--mono); min-width: 64px; font-size: 12px; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+button, .file-btn {
+  border: none; border-radius: 5px; padding: 7px 11px; cursor: pointer; font-size: 12px;
+  background: #334155; color: #fff;
+}
+button.ghost { background: #e2e8f0; color: #334155; }
+button.primary { background: var(--accent); }
+button:hover { filter: brightness(1.05); }
+.file-btn { display: inline-block; } .file-btn input { display: none; }
+.chk { display: inline-flex; gap: 5px; align-items: center; margin-right: 12px; font-size: 12px; cursor: pointer; }
+.warn {
+  display: none; margin: 8px 16px; padding: 8px 10px; border-radius: 6px;
+  background: #fef3c7; border: 1px solid #f59e0b; color: #92400e;
+}
+.warn.show { display: block; }
+
+.workspace {
+  display: grid; grid-template-columns: 1fr 340px; gap: 12px;
+  padding: 12px 16px 20px; min-height: 0;
+}
+@media (max-width: 1100px) { .workspace { grid-template-columns: 1fr; } }
+
+.sheet-card {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  overflow: hidden; display: flex; flex-direction: column; min-height: 420px;
+}
+.sheet-toolbar {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  padding: 8px 10px; border-bottom: 1px solid var(--line); background: #f8fafc;
+}
+.sheet-wrap { overflow: auto; flex: 1; max-height: calc(100vh - 260px); }
+
+table.sheet {
+  border-collapse: separate; border-spacing: 0; width: max-content; min-width: 100%;
+  font-size: 12px;
+}
+table.sheet th, table.sheet td {
+  border-right: 1px solid var(--line); border-bottom: 1px solid var(--line);
+  padding: 6px 8px; white-space: nowrap; vertical-align: middle;
+}
+table.sheet thead th {
+  position: sticky; top: 0; z-index: 5; background: #1e293b; color: #f8fafc;
+  font-size: 11px; font-weight: 600; text-align: center;
+}
+table.sheet thead tr.group th { top: 0; letter-spacing: .04em; }
+table.sheet thead tr.labels th {
+  top: 28px; background: #334155; font-weight: 500; cursor: help;
+}
+table.sheet thead tr.formulas th {
+  top: 56px; background: #475569; font-size: 9px; font-weight: 400; color: #cbd5e1;
+  white-space: normal; max-width: 100px; line-height: 1.2; vertical-align: top;
+}
+body.hide-formulas table.sheet thead tr.formulas { display: none; }
+body.hide-formulas table.sheet thead tr.labels th { top: 28px; }
+
+table.sheet tbody tr:nth-child(even) td { background: #f8fafc; }
+table.sheet tbody tr:hover td { background: #eff6ff; }
+table.sheet tbody tr.selected td { background: #dbeafe !important; }
+table.sheet td { text-align: right; font-family: var(--mono); }
+table.sheet td.center { text-align: center; font-family: var(--font); }
+table.sheet td.row-num {
+  text-align: center; font-family: var(--font); color: var(--muted);
+  background: #f1f5f9 !important; position: sticky; left: 0; z-index: 3;
+}
+table.sheet th.sticky-num { position: sticky; left: 0; z-index: 6; background: #0f172a; }
+table.sheet .sticky-k {
+  position: sticky; z-index: 4; background: #fffbeb !important;
+  box-shadow: -1px 0 0 var(--line), 1px 0 0 var(--line);
+}
+table.sheet thead th.sticky-k { background: #92400e !important; z-index: 7; }
+table.sheet td.input-cell { background: var(--yellow) !important; padding: 2px; }
+table.sheet td.input-cell.greek-target { background: #dcfce7 !important; }
+table.sheet td.input-cell input {
+  width: 100%; min-width: 70px; border: none; background: transparent;
+  font-family: var(--mono); font-size: 12px; text-align: right; padding: 5px 4px;
+}
+table.sheet td.input-cell input:focus { outline: 2px solid var(--accent); background: #fff; }
+.tag-itm { color: var(--itm); font-weight: 700; text-align: center; font-family: var(--font) !important; }
+.tag-atm { color: var(--atm); font-weight: 700; text-align: center; font-family: var(--font) !important; }
+.tag-otm { color: var(--otm); font-weight: 600; text-align: center; font-family: var(--font) !important; }
+.del-btn { background: transparent; color: #94a3b8; border: none; cursor: pointer; padding: 2px 6px; }
+.del-btn:hover { color: var(--bad); }
+
+.side {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  padding: 12px; max-height: calc(100vh - 200px); overflow: auto;
+}
+.side h3 {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--muted); margin: 12px 0 8px;
+}
+.side h3:first-child { margin-top: 0; }
+.side .box {
+  background: #f8fafc; border: 1px solid var(--line); border-radius: 6px; padding: 10px; margin-bottom: 8px;
+}
+.metric { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; font-size: 12px; }
+.metric span:first-child { color: var(--muted); }
+.metric span:last-child { font-family: var(--mono); }
+.whatif table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.whatif th, .whatif td { border: 1px solid var(--line); padding: 3px 4px; text-align: center; }
+.whatif th { background: #f1f5f9; }
+.arrow-up { color: var(--ok); } .arrow-down { color: var(--bad); } .arrow-flat { color: var(--muted); }
+.solver-msg { font-size: 11px; margin-top: 6px; color: var(--muted); }
+.solver-msg.ok { color: var(--ok); } .solver-msg.err { color: var(--bad); }
+.hint { color: var(--muted); font-size: 12px; }
+.sheet-toolbar .hint { font-size: 11px; }
+.col-highlight { outline: 2px solid #22c55e; outline-offset: -2px; }
+</style>
+</head>
+<body class="hide-formulas">
+<header class="topbar">
+  <div class="brand">BSM <span>CHAIN WORKBOOK</span></div>
+  <a href="index.html">← Sensitivity Lab</a>
+  <div class="meta" id="topMeta">Excel-style chain · live BSM</div>
+</header>
+
+<div class="toolbar">
+  <div class="seg" id="panelSeg">
+    <button type="button" data-panel="market" class="on">Market</button>
+    <button type="button" data-panel="sliders">Sliders</button>
+    <button type="button" data-panel="tools">Tools</button>
+    <button type="button" data-panel="greek">Greek Solver</button>
+    <button type="button" data-panel="column">Column Ops</button>
+  </div>
+  <label class="chk"><input type="checkbox" id="togFormulas"> Formulas in header</label>
+  <label class="chk"><input type="checkbox" id="togCalls" checked> Calls</label>
+  <label class="chk"><input type="checkbox" id="togPuts" checked> Puts</label>
+  <label class="chk"><input type="checkbox" id="togExtra"> Extra</label>
+  <label class="chk"><input type="checkbox" id="togParity"> Parity</label>
+  <label class="chk"><input type="checkbox" id="togGreekEdit" checked> Edit Greeks</label>
+  <div class="status" id="statusHint">Ready</div>
+</div>
+
+<div class="panel on" id="panel-market">
+  <div class="grid-params">
+    <div class="field"><label>Spot S</label><input type="number" id="gS" class="y" value="7000" step="0.01"></div>
+    <div class="field"><label>Rate r</label><input type="number" id="gR" class="y" value="0.05" step="0.001"></div>
+    <div class="field"><label>Dividend q</label><input type="number" id="gQ" class="y" value="0" step="0.001"></div>
+    <div class="field"><label>Day count</label>
+      <select id="gDays"><option value="365" selected>ACT/365</option><option value="252">ACT/252</option></select>
+    </div>
+    <div class="field"><label>Current</label><input type="datetime-local" id="gCurrent" class="y"></div>
+    <div class="field"><label>Default expiry</label><input type="datetime-local" id="gExpiry" class="y"></div>
+    <div class="field"><label>Strike step</label><input type="number" id="gStrikeStep" class="y" value="25" step="1"></div>
+    <div class="field"><label>Flat IV %</label><input type="number" id="gFlatIV" class="y" value="20" step="0.1"></div>
+  </div>
+</div>
+
+<div class="panel" id="panel-sliders">
+  <div class="grid-sliders">
+    <div class="field"><label>Spot</label><div class="slider-row"><input type="range" id="slS" min="5000" max="9000" step="1" value="7000"><span class="val" id="slSVal">7000</span></div></div>
+    <div class="field"><label>IV bump (pts)</label><div class="slider-row"><input type="range" id="slIVbump" min="-15" max="15" step="0.1" value="0"><span class="val" id="slIVbumpVal">0.0</span></div></div>
+    <div class="field"><label>Rate %</label><div class="slider-row"><input type="range" id="slR" min="-2" max="15" step="0.05" value="5"><span class="val" id="slRVal">5.00%</span></div></div>
+    <div class="field"><label>Dividend %</label><div class="slider-row"><input type="range" id="slQ" min="0" max="12" step="0.05" value="0"><span class="val" id="slQVal">0.00%</span></div></div>
+    <div class="field"><label>Days to expiry</label><div class="slider-row"><input type="range" id="slDays" min="1" max="365" step="1" value="30"><span class="val" id="slDaysVal">30d</span></div></div>
+    <div class="field"><label>Strike shift</label><div class="slider-row"><input type="range" id="slKshift" min="-200" max="200" step="5" value="0"><span class="val" id="slKshiftVal">0</span></div></div>
+  </div>
+  <div class="actions">
+    <button type="button" id="btnApplyDaysAll" class="ghost">Apply days → all rows</button>
+    <button type="button" id="btnApplyKshift" class="ghost">Bake strike shift</button>
+    <button type="button" id="btnBakeBump" class="ghost">Bake IV bump</button>
+  </div>
+</div>
+
+<div class="panel" id="panel-tools">
+  <div class="actions" style="margin:0;">
+    <label class="file-btn primary">Upload Excel<input type="file" id="fileExcel" accept=".xlsx,.xls,.csv"></label>
+    <button type="button" id="btnExport" class="ghost">Download Excel</button>
+    <button type="button" id="btnExportCSV" class="ghost">CSV</button>
+    <button type="button" id="btnAddRow">+ Strike</button>
+    <button type="button" id="btnResetDemo" class="ghost">Demo chain</button>
+    <button type="button" id="btnApplyExpiryAll" class="ghost">Expiry → all</button>
+    <button type="button" id="btnFlatIV" class="ghost">Flat IV</button>
+    <button type="button" id="btnPrint" class="ghost">Print</button>
+    <select id="filterTag">
+      <option value="all">Filter: All</option><option value="ITM">ITM</option><option value="ATM">ATM</option><option value="OTM">OTM</option>
+    </select>
+    <select id="sortMode">
+      <option value="Kasc">Sort K ↑</option><option value="Kdesc">Sort K ↓</option>
+      <option value="IVasc">Sort IV ↑</option><option value="IVdesc">Sort IV ↓</option>
+    </select>
+  </div>
+</div>
+
+<div class="panel" id="panel-greek">
+  <div class="grid-params">
+    <div class="field"><label>Target Greek</label>
+      <select id="gkGreek">
+        <option value="delta">Delta</option>
+        <option value="gamma">Gamma</option>
+        <option value="vega">Vega (per 1%)</option>
+        <option value="theta">Theta / day</option>
+        <option value="rho">Rho (per 1%)</option>
+        <option value="price">Price</option>
+        <option value="vanna">Vanna</option>
+        <option value="vomma">Volga</option>
+      </select>
+    </div>
+    <div class="field"><label>Side</label>
+      <select id="gkSide"><option value="call">Call</option><option value="put">Put</option></select>
+    </div>
+    <div class="field"><label>Solve for</label>
+      <select id="gkSolve"><option value="K">Strike K</option><option value="sigma">IV σ</option></select>
+    </div>
+    <div class="field"><label>Target value</label><input type="number" id="gkTarget" class="y" value="0.25" step="0.01"></div>
+  </div>
+  <div class="actions">
+    <button type="button" id="btnSolveSelected" class="primary">Solve → selected row</button>
+    <button type="button" id="btnSolveAll" class="ghost">Solve → all rows (same target)</button>
+    <button type="button" id="btnDeltaLadder" class="ghost">Build Δ ladder (0.1…0.9)</button>
+    <span class="solver-msg" id="gkMsg">Single-target solve. For whole-column set / + / − use <strong>Column Ops</strong>.</span>
+  </div>
+</div>
+
+<div class="panel" id="panel-column">
+  <p class="hint" style="margin-bottom:10px;">
+    <strong>Poora column ek saath:</strong> saari rows ka Delta (ya koi aur column) same set karo, ya sab par +/−/× lagao — phir chain me Price, Γ, Vega… ka relation live dekho.
+  </p>
+  <div class="grid-params">
+    <div class="field"><label>Column</label>
+      <select id="colName">
+        <option value="delta">Δ Delta</option>
+        <option value="gamma">Γ Gamma</option>
+        <option value="vega">Vega %</option>
+        <option value="theta">Θ / day</option>
+        <option value="rho">ρ %</option>
+        <option value="price">Price</option>
+        <option value="vanna">Vanna</option>
+        <option value="vomma">Volga</option>
+        <option value="iv">IV (direct)</option>
+        <option value="K">Strike K (direct)</option>
+      </select>
+    </div>
+    <div class="field"><label>Side (for Greeks)</label>
+      <select id="colSide"><option value="call">Call</option><option value="put">Put</option></select>
+    </div>
+    <div class="field"><label>Operation</label>
+      <select id="colOp">
+        <option value="set">Set same (sab equal)</option>
+        <option value="add">Add / subtract (+/−)</option>
+        <option value="mul">Multiply (×)</option>
+      </select>
+    </div>
+    <div class="field"><label>Value</label><input type="number" id="colValue" class="y" value="0.25" step="0.01"></div>
+    <div class="field"><label>When Greek → solve</label>
+      <select id="colSolve"><option value="K">Strike K</option><option value="sigma">IV σ</option></select>
+    </div>
+    <div class="field"><label>Apply to</label>
+      <select id="colScope">
+        <option value="all">All rows</option>
+        <option value="visible">Filtered / visible only</option>
+      </select>
+    </div>
+  </div>
+  <div class="field" style="margin-top:12px;max-width:520px;">
+    <label>Live column bump slider (current column · add mode)</label>
+    <div class="slider-row">
+      <input type="range" id="colBumpSl" min="-50" max="50" step="1" value="0">
+      <span class="val" id="colBumpVal">0</span>
+    </div>
+    <span class="hint">Drag to +/− bump whole column from last snapshot. Release / Apply to commit.</span>
+  </div>
+  <div class="actions">
+    <button type="button" id="btnColApply" class="primary">Apply to whole column</button>
+    <button type="button" id="btnColPlus" class="ghost">+ step</button>
+    <button type="button" id="btnColMinus" class="ghost">− step</button>
+    <button type="button" id="btnColSnap" class="ghost">Snapshot (for slider)</button>
+    <button type="button" id="btnColUndo" class="ghost">Undo last column op</button>
+    <span class="solver-msg" id="colMsg">Example: Column=Δ, Op=Set same, Value=0.30 → har row ka call delta ≈ 0.30 (K adjust).</span>
+  </div>
+  <div class="box" id="colRelationBox" style="margin-top:12px;display:none;">
+    <strong style="font-size:12px;">Chain relation after last column op</strong>
+    <div id="colRelation" style="margin-top:6px;font-family:var(--mono);font-size:11px;"></div>
+  </div>
+</div>
+
+<div class="warn" id="warnBox"></div>
+
+<div class="workspace">
+  <div class="sheet-card">
+    <div class="sheet-toolbar">
+      <strong style="font-size:12px;">Option chain</strong>
+      <span class="hint">Yellow = K/IV/Expiry · Green = per-cell Greek · Use <b>Column Ops</b> / sidebar for poora column set / + / −</span>
+    </div>
+    <div class="sheet-wrap">
+      <table class="sheet" id="chainTable">
+        <thead id="chainHead"></thead>
+        <tbody id="chainBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <aside class="side">
+    <h3>Poora column (bulk)</h3>
+    <div class="box">
+      <div class="field"><label>Column</label>
+        <select id="sideColName">
+          <option value="delta">Δ Delta</option>
+          <option value="gamma">Γ Gamma</option>
+          <option value="vega">Vega %</option>
+          <option value="theta">Θ / day</option>
+          <option value="price">Price</option>
+          <option value="iv">IV</option>
+          <option value="K">Strike K</option>
+        </select>
+      </div>
+      <div class="field" style="margin-top:6px;"><label>Set sab same / amount</label>
+        <input type="number" id="sideColVal" class="y" value="0.25" step="0.01">
+      </div>
+      <div class="actions" style="margin-top:8px;">
+        <button type="button" id="sideColSet" class="primary">Sab same</button>
+        <button type="button" id="sideColAdd" class="ghost">Sab +</button>
+        <button type="button" id="sideColSub" class="ghost">Sab −</button>
+      </div>
+      <p class="hint" style="margin-top:6px;">Uses Column Ops settings for side &amp; solve-for (open Column Ops tab).</p>
+    </div>
+
+    <h3>Greek quick-edit (1 row)</h3>
+    <div class="box">
+      <div class="field"><label>Selected row target Δ (call)</label>
+        <input type="number" id="sideDelta" class="y" step="0.01" placeholder="e.g. 0.25">
+      </div>
+      <div class="actions" style="margin-top:8px;">
+        <button type="button" id="btnSideDeltaK" class="primary">Solve K</button>
+        <button type="button" id="btnSideDeltaIV" class="ghost">Solve IV</button>
+      </div>
+      <div class="field" style="margin-top:8px;"><label>Target price (call)</label>
+        <input type="number" id="sidePrice" class="y" step="0.01">
+      </div>
+      <div class="actions" style="margin-top:8px;">
+        <button type="button" id="btnSidePriceIV" class="ghost">Solve IV from price</button>
+      </div>
+    </div>
+
+    <h3>Selected row</h3>
+    <div id="selEmpty" class="hint">Click a row in the sheet.</div>
+    <div id="selPanel" style="display:none;">
+      <div id="selMetrics"></div>
+      <h3>What-if ↑</h3>
+      <div class="field"><label>Shock</label>
+        <select id="shockSize">
+          <option value="0.01">1% / 1pt</option>
+          <option value="0.005">0.5%</option>
+          <option value="0.02">2%</option>
+        </select>
+      </div>
+      <div class="whatif" id="whatIfTable" style="margin-top:8px;"></div>
+    </div>
+  </aside>
+</div>
+
+<p class="foot">Column Ops: poore column ka Δ (ya Γ / Vega / IV / K…) ek saath same set, ya sab par +/−/×. Inverse BSM K/IV adjust karta hai — baaki Greeks/price chain me live relation dikhate hain.</p>
+
+<script>
+const SQRT2PI = Math.sqrt(2 * Math.PI), INV_SQRT2 = 1 / Math.sqrt(2);
+function erfc(x) {
+  const z = Math.abs(x), t = 1 / (1 + 0.5 * z);
+  const tau = t * Math.exp(-z * z - 1.26551223 + t * (1.00002368 + t * (0.37409196 + t * (0.09678418 +
+    t * (-0.18628806 + t * (0.27886807 + t * (-1.13520398 + t * (1.48851587 + t * (-0.82215223 + t * 0.17087277)))))))));
+  return x >= 0 ? tau : 2 - tau;
+}
+function normPDF(x) { return Math.exp(-0.5 * x * x) / SQRT2PI; }
+function normCDF(x) { return !Number.isFinite(x) ? (x > 0 ? 1 : 0) : 0.5 * erfc(-x * INV_SQRT2); }
+
+function calculateBSM(p) {
+  const S = Math.max(+p.S, 1e-8), K = Math.max(+p.K, 1e-8);
+  const sigma = Math.max(+p.sigma, 1e-8), T = Math.max(+p.T, 1e-8);
+  const r = +p.r, q = +p.q, sqrtT = Math.sqrt(T), sigSqrtT = sigma * sqrtT;
+  const dq = Math.exp(-q * T), dr = Math.exp(-r * T);
+  const forward = S * Math.exp((r - q) * T);
+  const d1 = (Math.log(S / K) + (r - q + 0.5 * sigma * sigma) * T) / sigSqrtT;
+  const d2 = d1 - sigSqrtT;
+  const nd1 = normCDF(d1), nd2 = normCDF(d2), nmd1 = normCDF(-d1), nmd2 = normCDF(-d2), pd1 = normPDF(d1);
+  const call = S * dq * nd1 - K * dr * nd2;
+  const put = K * dr * nmd2 - S * dq * nmd1;
+  const deltaCall = dq * nd1, deltaPut = dq * (nd1 - 1);
+  const gamma = dq * pd1 / (S * sigSqrtT);
+  const vega = S * dq * pd1 * sqrtT;
+  const common = -(S * dq * pd1 * sigma) / (2 * sqrtT);
+  const thetaCall = common - r * K * dr * nd2 + q * S * dq * nd1;
+  const thetaPut = common + r * K * dr * nmd2 - q * S * dq * nmd1;
+  const rhoCall = K * T * dr * nd2, rhoPut = -K * T * dr * nmd2;
+  const charmCommon = pd1 * (2 * (r - q) * T - d2 * sigSqrtT) / (2 * T * sigSqrtT);
+  const charmCall = -dq * (charmCommon + q * nd1);
+  const charmPut = -dq * (charmCommon - q * nmd1);
+  const vanna = -dq * pd1 * d2 / sigma;
+  const vomma = vega * d1 * d2 / sigma;
+  const speed = -gamma / S * (1 + d1 / sigSqrtT);
+  const colorFactor = 2 * q * T + 1 + (2 * (r - q) * T - d2 * sigSqrtT) * d1 / sigSqrtT;
+  const color = dq * pd1 / (2 * S * T * sigSqrtT) * colorFactor;
+  const ultima = -(vega / (sigma * sigma)) * (d1 * d2 * (1 - d1 * d2) + d1 * d1 + d2 * d2);
+  const callIntr = Math.max(S - K, 0), putIntr = Math.max(K - S, 0);
+  return {
+    forward, d1, d2, call, put, deltaCall, deltaPut, gamma, vega,
+    thetaCall, thetaPut, rhoCall, rhoPut, vanna, vomma, charmCall, charmPut,
+    speed, color, ultima, callIntr, putIntr,
+    callTV: call - callIntr, putTV: put - putIntr,
+    lambdaCall: Math.abs(call) > 1e-15 ? deltaCall * S / call : NaN,
+    lambdaPut: Math.abs(put) > 1e-15 ? deltaPut * S / put : NaN,
+    parityLHS: call - put, parityRHS: S * dq - K * dr,
+    parityDiff: (call - put) - (S * dq - K * dr)
+  };
+}
+
+function moneynessTag(S, K, side) {
+  const tol = Math.max(S * 1e-4, 0.01);
+  if (Math.abs(S - K) <= tol) return 'ATM';
+  return side === 'call' ? (S > K ? 'ITM' : 'OTM') : (S < K ? 'ITM' : 'OTM');
+}
+function fmt(x, d) { return Number.isFinite(x) ? Number(x).toFixed(d) : '—'; }
+function fmtPct(x, d = 2) { return Number.isFinite(x) ? (100 * x).toFixed(d) + '%' : '—'; }
+function pad2(n) { return String(n).padStart(2, '0'); }
+function toLocalInput(d) {
+  return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) +
+    'T' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+}
+function parseLocalInput(s) { const d = new Date(s); return isNaN(d) ? null : d; }
+function formatDisplayDT(d) {
+  if (!d) return '—';
+  return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+}
+function yearsBetween(current, expiry, dayCount) {
+  if (!current || !expiry) return { days: NaN, years: NaN };
+  const days = (expiry - current) / 86400000;
+  return { days, years: days / dayCount };
+}
+function uid() { return 'r' + Math.random().toString(36).slice(2, 9); }
+function parseIV(v) {
+  if (v == null || v === '') return NaN;
+  if (typeof v === 'number') return v > 1.5 ? v / 100 : v;
+  const n = parseFloat(String(v).replace('%', ''));
+  return !Number.isFinite(n) ? NaN : (n > 1.5 ? n / 100 : n);
+}
+
+const State = {
+  rows: [], ivBump: 0, kShift: 0, selectedId: null,
+  show: { calls: true, puts: true, extra: false, parity: false, greekEdit: true },
+  filterTag: 'all', sortMode: 'Kasc', refreshTimer: null,
+  colSnapshot: null,
+  colUndo: null,
+  colBumpBase: null
+};
+
+/** Classic chain order: CALLS | STRIKE | PUTS */
+const COLS = [
+  { group: 'TIME', key: 'Tdays', label: 'T(d)', formula: 'Expiry−Current', section: 'core', freeze: 'left' },
+  { group: 'CALLS', key: 'callTag', label: 'Tag', formula: 'ITM/ATM/OTM', section: 'calls' },
+  { group: 'CALLS', key: 'call', label: 'Price', formula: 'BSM call', section: 'calls' },
+  { group: 'CALLS', key: 'callDelta', label: 'Δ', formula: 'e^{-qT}N(d1)', section: 'calls', greekEdit: 'deltaCall', solve: 'K' },
+  { group: 'CALLS', key: 'callGamma', label: 'Γ', formula: '∂Δ/∂S', section: 'calls', greekEdit: 'gamma', solve: 'sigma' },
+  { group: 'CALLS', key: 'callVega', label: 'Vega%', formula: 'Vega/100', section: 'calls', greekEdit: 'vegaPct', solve: 'sigma' },
+  { group: 'CALLS', key: 'callTheta', label: 'Θ/d', formula: 'Θ/Days', section: 'calls', greekEdit: 'thetaCallDay', solve: 'sigma' },
+  { group: 'CALLS', key: 'callRho', label: 'ρ%', formula: 'Rho/100', section: 'calls' },
+  { group: 'CALLS', key: 'callVanna', label: 'Vanna', formula: '∂Δ/∂σ /100', section: 'calls' },
+  { group: 'CALLS', key: 'callVolga', label: 'Volga', formula: '∂Vega/∂σ /100', section: 'calls' },
+  { group: 'CALLS', key: 'callCharm', label: 'Charm/d', formula: 'Charm/Days', section: 'calls' },
+  { group: 'CALLS', key: 'callIntr', label: 'Intr', formula: 'max(S−K,0)', section: 'calls' },
+  { group: 'CALLS', key: 'callTV', label: 'TV', formula: 'Price−intr', section: 'calls' },
+  { group: 'CALLS', key: 'callLambda', label: 'λ', formula: 'Δ·S/V', section: 'extra' },
+
+  { group: 'STRIKE', key: 'K', label: 'Strike K', formula: 'editable', section: 'core', input: true, freeze: 'mid' },
+  { group: 'STRIKE', key: 'iv', label: 'IV', formula: 'editable', section: 'core', input: true, freeze: 'mid' },
+  { group: 'STRIKE', key: 'expiry', label: 'Expiry', formula: 'editable', section: 'core', input: true },
+  { group: 'STRIKE', key: 'ivEff', label: 'IV eff', formula: 'IV+bump', section: 'extra' },
+  { group: 'STRIKE', key: 'forward', label: 'F', formula: 'Se^{(r−q)T}', section: 'extra' },
+  { group: 'STRIKE', key: 'd1', label: 'd1', formula: 'd1', section: 'extra' },
+  { group: 'STRIKE', key: 'd2', label: 'd2', formula: 'd2', section: 'extra' },
+
+  { group: 'PUTS', key: 'putTag', label: 'Tag', formula: 'ITM/ATM/OTM', section: 'puts' },
+  { group: 'PUTS', key: 'put', label: 'Price', formula: 'BSM put', section: 'puts' },
+  { group: 'PUTS', key: 'putDelta', label: 'Δ', formula: 'e^{-qT}(N(d1)−1)', section: 'puts', greekEdit: 'deltaPut', solve: 'K' },
+  { group: 'PUTS', key: 'putGamma', label: 'Γ', formula: 'same', section: 'puts', greekEdit: 'gamma', solve: 'sigma' },
+  { group: 'PUTS', key: 'putVega', label: 'Vega%', formula: 'same', section: 'puts', greekEdit: 'vegaPct', solve: 'sigma' },
+  { group: 'PUTS', key: 'putTheta', label: 'Θ/d', formula: 'Θ/Days', section: 'puts', greekEdit: 'thetaPutDay', solve: 'sigma' },
+  { group: 'PUTS', key: 'putRho', label: 'ρ%', formula: 'Rho/100', section: 'puts' },
+  { group: 'PUTS', key: 'putVanna', label: 'Vanna', formula: 'same', section: 'puts' },
+  { group: 'PUTS', key: 'putVolga', label: 'Volga', formula: 'same', section: 'puts' },
+  { group: 'PUTS', key: 'putCharm', label: 'Charm/d', formula: 'Charm/Days', section: 'puts' },
+  { group: 'PUTS', key: 'putIntr', label: 'Intr', formula: 'max(K−S,0)', section: 'puts' },
+  { group: 'PUTS', key: 'putTV', label: 'TV', formula: 'Price−intr', section: 'puts' },
+  { group: 'PUTS', key: 'putLambda', label: 'λ', formula: 'Δ·S/V', section: 'extra' },
+
+  { group: 'HIGHER', key: 'speed', label: 'Speed', formula: '∂Γ/∂S', section: 'extra' },
+  { group: 'HIGHER', key: 'color', label: 'Color/d', formula: '∂Γ/∂t/Days', section: 'extra' },
+  { group: 'HIGHER', key: 'ultima', label: 'Ultima', formula: '∂Vomma/∂σ', section: 'extra' },
+  { group: 'PARITY', key: 'parityDiff', label: 'Parity ε', formula: 'LHS−RHS', section: 'parity' }
+];
+
+function sectionVisible(sec) {
+  if (sec === 'core') return true;
+  if (sec === 'calls') return State.show.calls;
+  if (sec === 'puts') return State.show.puts;
+  if (sec === 'extra') return State.show.extra;
+  if (sec === 'parity') return State.show.parity;
+  return true;
+}
+function visibleCols() { return COLS.filter(c => sectionVisible(c.section)); }
+
+function globals() {
+  return {
+    S: +document.getElementById('gS').value,
+    r: +document.getElementById('gR').value,
+    q: +document.getElementById('gQ').value,
+    dayCount: +document.getElementById('gDays').value,
+    current: parseLocalInput(document.getElementById('gCurrent').value)
+  };
+}
+function effectiveK(row) { return (+row.K || 0) + State.kShift; }
+function effectiveIV(row) { return Math.max(1e-6, (+row.iv || 0) + State.ivBump); }
+
+function computeRow(row, g) {
+  const K = effectiveK(row);
+  const tInfo = yearsBetween(g.current, row.expiry, g.dayCount);
+  const sigma = effectiveIV(row);
+  const out = { Tdays: tInfo.days, K, iv: row.iv, ivEff: sigma };
+  if (!Number.isFinite(tInfo.years) || tInfo.years <= 0 || !(K > 0) || !(sigma > 0) || !(g.S > 0)) {
+    out.bad = true; return out;
+  }
+  const b = calculateBSM({ S: g.S, K, sigma, T: tInfo.years, r: g.r, q: g.q });
+  const D = g.dayCount;
+  Object.assign(out, {
+    bad: false,
+    callTag: moneynessTag(g.S, K, 'call'), putTag: moneynessTag(g.S, K, 'put'),
+    call: b.call, callDelta: b.deltaCall, callGamma: b.gamma, callVega: b.vega / 100,
+    callTheta: b.thetaCall / D, callRho: b.rhoCall / 100, callVanna: b.vanna / 100,
+    callVolga: b.vomma / 100, callCharm: b.charmCall / D, callLambda: b.lambdaCall,
+    callIntr: b.callIntr, callTV: b.callTV,
+    put: b.put, putDelta: b.deltaPut, putGamma: b.gamma, putVega: b.vega / 100,
+    putTheta: b.thetaPut / D, putRho: b.rhoPut / 100, putVanna: b.vanna / 100,
+    putVolga: b.vomma / 100, putCharm: b.charmPut / D, putLambda: b.lambdaPut,
+    putIntr: b.putIntr, putTV: b.putTV,
+    forward: b.forward, d1: b.d1, d2: b.d2,
+    speed: b.speed, color: b.color / D, ultima: b.ultima, parityDiff: b.parityDiff
+  });
+  return out;
+}
+
+function greekValueFromBSM(b, key, dayCount) {
+  switch (key) {
+    case 'deltaCall': return b.deltaCall;
+    case 'deltaPut': return b.deltaPut;
+    case 'gamma': return b.gamma;
+    case 'vegaPct': return b.vega / 100;
+    case 'thetaCallDay': return b.thetaCall / dayCount;
+    case 'thetaPutDay': return b.thetaPut / dayCount;
+    case 'rhoPctCall': return b.rhoCall / 100;
+    case 'rhoPctPut': return b.rhoPut / 100;
+    case 'priceCall': return b.call;
+    case 'pricePut': return b.put;
+    case 'vanna': return b.vanna / 100;
+    case 'vomma': return b.vomma / 100;
+    default: return NaN;
+  }
+}
+
+function mapGreekUI(greek, side) {
+  if (greek === 'delta') return side === 'call' ? 'deltaCall' : 'deltaPut';
+  if (greek === 'gamma') return 'gamma';
+  if (greek === 'vega') return 'vegaPct';
+  if (greek === 'theta') return side === 'call' ? 'thetaCallDay' : 'thetaPutDay';
+  if (greek === 'rho') return side === 'call' ? 'rhoPctCall' : 'rhoPctPut';
+  if (greek === 'price') return side === 'call' ? 'priceCall' : 'pricePut';
+  if (greek === 'vanna') return 'vanna';
+  if (greek === 'vomma') return 'vomma';
+  return 'deltaCall';
+}
+
+function solveParam(base, solveKey, greekKey, target, dayCount) {
+  let lo, hi;
+  if (solveKey === 'K') {
+    lo = base.S * 0.2; hi = base.S * 3;
+  } else {
+    lo = 1e-4; hi = 3;
+  }
+  const f = (x) => {
+    const p = { ...base, [solveKey]: x };
+    const b = calculateBSM(p);
+    return greekValueFromBSM(b, greekKey, dayCount) - target;
+  };
+  let flo = f(lo), fhi = f(hi);
+  // expand bounds if needed
+  for (let i = 0; i < 20 && flo * fhi > 0; i++) {
+    if (solveKey === 'K') { lo *= 0.7; hi *= 1.4; }
+    else { hi *= 1.5; }
+    flo = f(lo); fhi = f(hi);
+  }
+  if (flo * fhi > 0) return { ok: false, reason: 'Target outside reachable range' };
+  let a = lo, b = hi, fa = flo;
+  for (let i = 0; i < 80; i++) {
+    const m = 0.5 * (a + b);
+    const fm = f(m);
+    if (Math.abs(fm) < 1e-8 || Math.abs(b - a) < 1e-8) return { ok: true, value: m };
+    if (fa * fm <= 0) { b = m; } else { a = m; fa = fm; }
+  }
+  return { ok: true, value: 0.5 * (a + b) };
+}
+
+function applySolveToRow(row, solveKey, greekKey, target) {
+  const g = globals();
+  const T = yearsBetween(g.current, row.expiry, g.dayCount).years;
+  if (!(T > 0)) return { ok: false, reason: 'Bad T' };
+  const base = {
+    S: g.S, K: effectiveK(row), sigma: effectiveIV(row), T, r: g.r, q: g.q
+  };
+  // solve in effective space, then write back base row (undo bump/shift)
+  const res = solveParam(base, solveKey, greekKey, target, g.dayCount);
+  if (!res.ok) return res;
+  if (solveKey === 'K') row.K = res.value - State.kShift;
+  else row.iv = Math.max(1e-6, res.value - State.ivBump);
+  return { ok: true, value: res.value };
+}
+
+function demoRows() {
+  const S = +document.getElementById('gS').value || 7000;
+  const step = +document.getElementById('gStrikeStep').value || 25;
+  const strikes = [];
+  for (let k = S - 7 * step; k <= S + 7 * step + 1e-9; k += step) strikes.push(Math.round(k * 100) / 100);
+  const exp = parseLocalInput(document.getElementById('gExpiry').value);
+  return strikes.map(K => {
+    const m = Math.abs(Math.log(S / Math.max(K, 1e-8)));
+    const iv = Math.min(0.55, Math.max(0.1, 0.16 + m * 0.3));
+    return { id: uid(), expiry: exp, K, iv };
+  });
+}
+
+function buildHeader() {
+  const cols = visibleCols();
+  const groups = [];
+  for (const c of cols) {
+    const last = groups[groups.length - 1];
+    if (last && last.name === c.group) last.span++;
+    else groups.push({ name: c.group, span: 1 });
+  }
+  const showF = !document.body.classList.contains('hide-formulas');
+  const rowSpan = showF ? 3 : 2;
+  let g = `<tr class="group"><th class="sticky-num" rowspan="${rowSpan}">#</th>`;
+  for (const x of groups) {
+    const cls = x.name === 'CALLS' ? 'style="background:#1e3a8a"' : x.name === 'PUTS' ? 'style="background:#7c2d12"' : x.name === 'STRIKE' ? 'style="background:#92400e"' : '';
+    g += `<th colspan="${x.span}" ${cls}>${x.name}</th>`;
+  }
+  g += `<th rowspan="${rowSpan}" style="background:#0f172a"></th></tr>`;
+
+  let l = '<tr class="labels">';
+  for (const c of cols) {
+    const sticky = c.freeze === 'mid' ? ' sticky-k' : '';
+    l += `<th class="${sticky}" title="${c.formula}">${c.label}</th>`;
+  }
+  l += '</tr>';
+
+  let f = '';
+  if (showF) {
+    f = '<tr class="formulas">';
+    for (const c of cols) f += `<th class="${c.freeze === 'mid' ? 'sticky-k' : ''}">${c.formula}</th>`;
+    f += '</tr>';
+  }
+  document.getElementById('chainHead').innerHTML = g + l + f;
+}
+
+function tagClass(t) { return t === 'ITM' ? 'tag-itm' : t === 'ATM' ? 'tag-atm' : 'tag-otm'; }
+
+function cellHTML(col, c, row) {
+  const key = col.key;
+  const sticky = col.freeze === 'mid' ? ' sticky-k' : '';
+  const dec = {
+    call: 2, put: 2, callIntr: 2, putIntr: 2, callTV: 2, putTV: 2, K: 2, forward: 2, Tdays: 2,
+    callDelta: 4, putDelta: 4, callVega: 4, putVega: 4, callTheta: 4, putTheta: 4,
+    callRho: 4, putRho: 4, callLambda: 3, putLambda: 3, d1: 4, d2: 4,
+    callGamma: 6, putGamma: 6, callVanna: 5, putVanna: 5, callVolga: 5, putVolga: 5,
+    callCharm: 5, putCharm: 5, speed: 7, color: 7, ultima: 3, parityDiff: 6
+  };
+
+  if (key === 'expiry') {
+    const expVal = row.expiry ? toLocalInput(row.expiry) : '';
+    return `<td class="input-cell${sticky}"><input type="datetime-local" data-f="expiry" value="${expVal}"></td>`;
+  }
+  if (key === 'K') return `<td class="input-cell${sticky}"><input type="number" data-f="K" step="0.01" value="${row.K}"></td>`;
+  if (key === 'iv') return `<td class="input-cell${sticky}"><input type="text" data-f="iv" value="${fmtPct(row.iv, 2)}"></td>`;
+  if (key === 'callTag') return `<td class="${tagClass(c.callTag || '')}" data-k="callTag">${c.bad ? '—' : c.callTag}</td>`;
+  if (key === 'putTag') return `<td class="${tagClass(c.putTag || '')}" data-k="putTag">${c.bad ? '—' : c.putTag}</td>`;
+  if (key === 'ivEff') return `<td data-k="ivEff">${fmtPct(c.ivEff, 2)}</td>`;
+
+  if (State.show.greekEdit && col.greekEdit && !c.bad) {
+    const val = c[key];
+    return `<td class="input-cell greek-target" title="Edit ${col.label} → solve ${col.solve}">
+      <input type="number" data-greek="${col.greekEdit}" data-solve="${col.solve}" step="any" value="${fmt(val, dec[key] ?? 4)}">
+    </td>`;
+  }
+
+  return `<td class="${sticky}" data-k="${key}">${c.bad && key !== 'Tdays' ? '—' : fmt(c[key], dec[key] ?? 4)}</td>`;
+}
+
+function sortedFilteredRows(g) {
+  let rows = State.rows.slice();
+  if (State.filterTag !== 'all') {
+    rows = rows.filter(r => {
+      const c = computeRow(r, g);
+      return c.callTag === State.filterTag || c.putTag === State.filterTag;
+    });
+  }
+  rows.sort((a, b) => {
+    if (State.sortMode === 'Kasc') return effectiveK(a) - effectiveK(b);
+    if (State.sortMode === 'Kdesc') return effectiveK(b) - effectiveK(a);
+    if (State.sortMode === 'IVasc') return effectiveIV(a) - effectiveIV(b);
+    return effectiveIV(b) - effectiveIV(a);
+  });
+  return rows;
+}
+
+function renderBody() {
+  const g = globals();
+  const warn = document.getElementById('warnBox');
+  if (!g.current) { warn.classList.add('show'); warn.textContent = 'Set Current datetime.'; }
+  else warn.classList.remove('show');
+
+  const active = document.activeElement;
+  let focusInfo = null;
+  if (active && (active.matches?.('input[data-f]') || active.matches?.('input[data-greek]'))) {
+    const tr = active.closest('tr');
+    if (tr) focusInfo = {
+      id: tr.dataset.id,
+      f: active.dataset.f || null,
+      greek: active.dataset.greek || null,
+      start: active.selectionStart, end: active.selectionEnd
+    };
+  }
+
+  const cols = visibleCols();
+  const rows = sortedFilteredRows(g);
+  let html = '';
+  rows.forEach((row, idx) => {
+    const c = computeRow(row, g);
+    html += `<tr data-id="${row.id}" class="${row.id === State.selectedId ? 'selected' : ''}">`;
+    html += `<td class="row-num">${idx + 1}</td>`;
+    for (const col of cols) html += cellHTML(col, c, row);
+    html += `<td><button type="button" class="del-btn" data-del="${row.id}">✕</button></td></tr>`;
+  });
+  document.getElementById('chainBody').innerHTML = html;
+  document.getElementById('statusHint').textContent =
+    `${rows.length}/${State.rows.length} · IV ${State.ivBump >= 0 ? '+' : ''}${(100 * State.ivBump).toFixed(1)}pt · KΔ ${State.kShift} · S=${fmt(g.S, 2)}`;
+  document.getElementById('topMeta').textContent = document.getElementById('statusHint').textContent;
+
+  if (focusInfo) {
+    let el = null;
+    if (focusInfo.f) el = document.querySelector(`tr[data-id="${focusInfo.id}"] input[data-f="${focusInfo.f}"]`);
+    else if (focusInfo.greek) el = document.querySelector(`tr[data-id="${focusInfo.id}"] input[data-greek="${focusInfo.greek}"]`);
+    if (el) { el.focus(); try { el.setSelectionRange(focusInfo.start, focusInfo.end); } catch (e) {} }
+  }
+  renderSelectedPanel();
+}
+
+function scheduleRefresh() {
+  clearTimeout(State.refreshTimer);
+  State.refreshTimer = setTimeout(renderBody, 50);
+}
+function fullRefresh() { buildHeader(); renderBody(); }
+
+function bumpParams(base, variable, h) {
+  const p = { ...base, [variable]: base[variable] + h };
+  if (['S', 'K', 'sigma', 'T'].includes(variable)) p[variable] = Math.max(p[variable], 1e-8);
+  return p;
+}
+
+function renderSelectedPanel() {
+  const row = State.rows.find(r => r.id === State.selectedId);
+  const empty = document.getElementById('selEmpty');
+  const panel = document.getElementById('selPanel');
+  if (!row) { empty.style.display = 'block'; panel.style.display = 'none'; return; }
+  empty.style.display = 'none'; panel.style.display = 'block';
+  const g = globals();
+  const c = computeRow(row, g);
+  document.getElementById('selMetrics').innerHTML = [
+    ['K eff', fmt(c.K, 2)], ['IV eff', fmtPct(c.ivEff, 2)], ['T(d)', fmt(c.Tdays, 2)],
+    ['Call', fmt(c.call, 2)], ['Put', fmt(c.put, 2)],
+    ['Δc', fmt(c.callDelta, 4)], ['Δp', fmt(c.putDelta, 4)],
+    ['Γ', fmt(c.callGamma, 6)], ['Vega%', fmt(c.callVega, 4)], ['Θ/d', fmt(c.callTheta, 4)]
+  ].map(([a, b]) => `<div class="metric"><span>${a}</span><span>${b}</span></div>`).join('');
+
+  if (!c.bad) {
+    document.getElementById('sideDelta').value = fmt(c.callDelta, 4);
+    document.getElementById('sidePrice').value = fmt(c.call, 2);
+  }
+
+  if (c.bad) { document.getElementById('whatIfTable').innerHTML = '<p class="hint">Invalid</p>'; return; }
+  const shock = +document.getElementById('shockSize').value;
+  const T = yearsBetween(g.current, row.expiry, g.dayCount).years;
+  const base = { S: g.S, K: effectiveK(row), sigma: effectiveIV(row), T, r: g.r, q: g.q };
+  const outs = ['call', 'deltaCall', 'gamma', 'vega', 'thetaCall'];
+  const labels = { call: 'P', deltaCall: 'Δ', gamma: 'Γ', vega: 'V', thetaCall: 'Θ' };
+  const inputs = [
+    { v: 'S', h: base.S * shock }, { v: 'K', h: base.K * shock },
+    { v: 'sigma', h: shock }, { v: 'T', h: Math.max(base.T * shock, 1 / g.dayCount) }
+  ];
+  let html = '<table><thead><tr><th></th>' + outs.map(o => `<th>${labels[o]}</th>`).join('') + '</tr></thead><tbody>';
+  for (const inp of inputs) {
+    const b0 = calculateBSM(base), b1 = calculateBSM(bumpParams(base, inp.v, inp.h));
+    html += `<tr><td>${inp.v}↑</td>`;
+    for (const o of outs) {
+      const ch = b1[o] - b0[o];
+      const arrow = Math.abs(ch) < 1e-8 ? '→' : ch > 0 ? '↑' : '↓';
+      const cls = arrow === '↑' ? 'arrow-up' : arrow === '↓' ? 'arrow-down' : 'arrow-flat';
+      html += `<td><span class="${cls}">${arrow}</span></td>`;
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  document.getElementById('whatIfTable').innerHTML = html;
+}
+
+function setMsg(text, ok) {
+  const el = document.getElementById('gkMsg');
+  el.textContent = text;
+  el.className = 'solver-msg ' + (ok === true ? 'ok' : ok === false ? 'err' : '');
+}
+
+function setColMsg(text, ok) {
+  const el = document.getElementById('colMsg');
+  el.textContent = text;
+  el.className = 'solver-msg ' + (ok === true ? 'ok' : ok === false ? 'err' : '');
+}
+
+function cloneRows(rows) {
+  return rows.map(r => ({ id: r.id, K: r.K, iv: r.iv, expiry: r.expiry ? new Date(r.expiry) : null }));
+}
+
+function snapshotRows() {
+  State.colUndo = cloneRows(State.rows);
+}
+
+function rowMetric(row, colName, side) {
+  const g = globals();
+  const c = computeRow(row, g);
+  if (c.bad) return NaN;
+  if (colName === 'iv') return effectiveIV(row);
+  if (colName === 'K') return effectiveK(row);
+  const key = mapGreekUI(colName, side);
+  const map = {
+    deltaCall: c.callDelta, deltaPut: c.putDelta, gamma: c.callGamma,
+    vegaPct: c.callVega, thetaCallDay: c.callTheta, thetaPutDay: c.putTheta,
+    rhoPctCall: c.callRho, rhoPctPut: c.putRho,
+    priceCall: c.call, pricePut: c.put, vanna: c.callVanna, vomma: c.callVolga
+  };
+  return map[key];
+}
+
+function targetRowsForColumn() {
+  const scope = document.getElementById('colScope')?.value || 'all';
+  const g = globals();
+  if (scope === 'visible') return sortedFilteredRows(g);
+  return State.rows;
+}
+
+function applyColumnOp(op, value, opts = {}) {
+  const colName = opts.colName || document.getElementById('colName').value;
+  const side = opts.side || document.getElementById('colSide').value;
+  const solve = opts.solve || document.getElementById('colSolve').value;
+  const rows = opts.rows || targetRowsForColumn();
+  if (!Number.isFinite(value) && op !== 'snap') {
+    setColMsg('Enter a numeric value.', false);
+    return;
+  }
+
+  if (!opts.skipUndo) snapshotRows();
+
+  let okN = 0, fail = 0;
+  const before = [];
+
+  for (const row of rows) {
+    before.push({ id: row.id, m: rowMetric(row, colName, side) });
+    if (colName === 'iv') {
+      let next;
+      const cur = row.iv;
+      if (op === 'set') next = value > 1.5 ? value / 100 : value;
+      else if (op === 'add') next = cur + (Math.abs(value) > 1.5 ? value / 100 : value);
+      else next = cur * value;
+      if (!(next > 0)) { fail++; continue; }
+      row.iv = next;
+      okN++;
+      continue;
+    }
+    if (colName === 'K') {
+      let next;
+      const cur = row.K;
+      if (op === 'set') next = value;
+      else if (op === 'add') next = cur + value;
+      else next = cur * value;
+      if (!(next > 0)) { fail++; continue; }
+      row.K = next;
+      okN++;
+      continue;
+    }
+
+    const greekKey = mapGreekUI(colName, side);
+    const cur = rowMetric(row, colName, side);
+    if (!Number.isFinite(cur)) { fail++; continue; }
+    let target;
+    if (op === 'set') target = value;
+    else if (op === 'add') target = cur + value;
+    else target = cur * value;
+
+    const res = applySolveToRow(row, solve, greekKey, target);
+    if (res.ok) okN++; else fail++;
+  }
+
+  setColMsg(
+    `${colName} · ${op} ${value} → ${okN} ok` + (fail ? `, ${fail} fail` : '') +
+    (colName !== 'iv' && colName !== 'K' ? ` (solved ${solve})` : ''),
+    fail === 0
+  );
+  showColumnRelation(colName, side, before);
+  scheduleRefresh();
+}
+
+function showColumnRelation(colName, side, beforeList) {
+  const g = globals();
+  const box = document.getElementById('colRelationBox');
+  const el = document.getElementById('colRelation');
+  box.style.display = 'block';
+  const beforeMap = Object.fromEntries((beforeList || []).map(x => [x.id, x.m]));
+  let lines = [];
+  let sumDPrice = 0, sumDGamma = 0, n = 0;
+  for (const row of State.rows) {
+    const c = computeRow(row, g);
+    if (c.bad) continue;
+    const mNow = rowMetric(row, colName, side);
+    const m0 = beforeMap[row.id];
+    const price = side === 'put' ? c.put : c.call;
+    const gamma = c.callGamma;
+    const vega = c.callVega;
+    const dM = Number.isFinite(m0) ? (mNow - m0) : NaN;
+    sumDPrice += price; sumDGamma += gamma; n++;
+    if (lines.length < 8) {
+      lines.push(
+        `K=${fmt(c.K, 1)}  ${colName}=${fmt(mNow, 4)}` +
+        (Number.isFinite(dM) ? ` (Δcol ${dM >= 0 ? '+' : ''}${fmt(dM, 4)})` : '') +
+        `  Px=${fmt(price, 2)}  Γ=${fmt(gamma, 6)}  Vega%=${fmt(vega, 4)}`
+      );
+    }
+  }
+  el.innerHTML = `<div class="hint" style="margin-bottom:4px;">Sample rows after op — compare ${colName} vs Price / Γ / Vega across strikes:</div>` +
+    lines.join('<br>') +
+    (n ? `<br><br>Avg Price≈${fmt(sumDPrice / n, 2)} · Avg Γ≈${fmt(sumDGamma / n, 6)}` : '');
+}
+
+function captureColBumpBase() {
+  State.colBumpBase = cloneRows(State.rows);
+  document.getElementById('colBumpSl').value = 0;
+  document.getElementById('colBumpVal').textContent = '0';
+  setColMsg('Snapshot taken — use slider to bump whole column from this baseline.', true);
+}
+
+function applyColBumpFromSlider() {
+  if (!State.colBumpBase) {
+    State.colBumpBase = cloneRows(State.rows);
+  }
+  const raw = +document.getElementById('colBumpSl').value;
+  const colName = document.getElementById('colName').value;
+  let add = raw;
+  if (['delta', 'gamma', 'vanna', 'vega', 'theta', 'rho', 'iv'].includes(colName)) add = raw / 100;
+  else if (colName === 'price') add = raw / 10;
+
+  document.getElementById('colBumpVal').textContent = String(raw);
+  // restore from snapshot then add
+  State.rows = State.colBumpBase.map(r => ({
+    id: r.id, K: r.K, iv: r.iv, expiry: r.expiry ? new Date(r.expiry) : null
+  }));
+  applyColumnOp('add', add, { skipUndo: true, rows: State.rows, colName });
+}
+
+function runSolver(scope) {
+  const greek = document.getElementById('gkGreek').value;
+  const side = document.getElementById('gkSide').value;
+  const solve = document.getElementById('gkSolve').value;
+  const target = +document.getElementById('gkTarget').value;
+  const key = mapGreekUI(greek, side);
+  if (!Number.isFinite(target)) { setMsg('Enter a numeric target.', false); return; }
+  let rows = scope === 'all' ? State.rows : State.rows.filter(r => r.id === State.selectedId);
+  if (!rows.length) { setMsg('Select a row first (or use all rows).', false); return; }
+  let okN = 0, fail = 0;
+  for (const row of rows) {
+    const res = applySolveToRow(row, solve, key, target);
+    if (res.ok) okN++; else fail++;
+  }
+  setMsg(`Solved ${okN} row(s)` + (fail ? `, ${fail} failed` : '') + ` · ${greek}→${solve}=${target}`, fail === 0);
+  scheduleRefresh();
+}
+
+function buildDeltaLadder() {
+  const g = globals();
+  const exp = parseLocalInput(document.getElementById('gExpiry').value);
+  const iv = (+document.getElementById('gFlatIV').value || 20) / 100;
+  const side = document.getElementById('gkSide').value;
+  const targets = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9];
+  if (side === 'put') {
+    // put deltas are negative
+    for (let i = 0; i < targets.length; i++) targets[i] = -targets[i];
+  }
+  const rows = [];
+  for (const t of targets) {
+    const row = { id: uid(), expiry: exp, K: g.S, iv };
+    const key = side === 'call' ? 'deltaCall' : 'deltaPut';
+    const res = applySolveToRow(row, 'K', key, t);
+    if (res.ok) rows.push(row);
+  }
+  if (!rows.length) { setMsg('Delta ladder failed.', false); return; }
+  State.rows = rows;
+  State.ivBump = 0; State.kShift = 0;
+  document.getElementById('slIVbump').value = 0;
+  document.getElementById('slKshift').value = 0;
+  setMsg(`Built ${rows.length}-strike Δ ladder (${side}).`, true);
+  fullRefresh();
+}
+
+/* Excel helpers */
+function normalizeHeader(h) { return String(h || '').trim().toLowerCase().replace(/[%()]/g, '').replace(/\s+/g, ' '); }
+function findCol(headers, candidates) {
+  const norm = headers.map(normalizeHeader);
+  for (const c of candidates) { const i = norm.findIndex(h => h === c || h.includes(c)); if (i >= 0) return i; }
+  return -1;
+}
+function parseExcelDate(v) {
+  if (v == null || v === '') return null;
+  if (v instanceof Date && !isNaN(v)) return v;
+  if (typeof v === 'number' && window.XLSX?.SSF) {
+    const d = XLSX.SSF.parse_date_code(v);
+    if (d) return new Date(d.y, d.m - 1, d.d, d.H || 0, d.M || 0);
+  }
+  const d = new Date(v); return isNaN(d) ? null : d;
+}
+function loadFromSheetAOA(aoa) {
+  let headerIdx = 0;
+  for (let i = 0; i < Math.min(10, aoa.length); i++) {
+    const j = (aoa[i] || []).map(normalizeHeader).join('|');
+    if (j.includes('strike') || j.includes('iv')) { headerIdx = i; break; }
+  }
+  const headers = aoa[headerIdx] || [];
+  const iK = findCol(headers, ['strike k', 'strike', 'k']);
+  const iIV = findCol(headers, ['iv', 'implied', 'sigma', 'vol']);
+  const iExp = findCol(headers, ['expiry', 'expiration', 'exp']);
+  if (iK < 0 || iIV < 0) throw new Error('Need Strike and IV columns');
+  const rows = [];
+  for (let i = headerIdx + 1; i < aoa.length; i++) {
+    const row = aoa[i] || [];
+    const K = parseFloat(row[iK]), iv = parseIV(row[iIV]);
+    if (!Number.isFinite(K) || !Number.isFinite(iv)) continue;
+    rows.push({
+      id: uid(), K, iv,
+      expiry: iExp >= 0 ? parseExcelDate(row[iExp]) : parseLocalInput(document.getElementById('gExpiry').value)
+    });
+  }
+  if (!rows.length) throw new Error('No data rows');
+  State.rows = rows; State.ivBump = 0; State.kShift = 0;
+  document.getElementById('slIVbump').value = 0; document.getElementById('slKshift').value = 0;
+  fullRefresh();
+}
+function handleFile(file) {
+  if (!window.XLSX) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array', cellDates: true });
+      loadFromSheetAOA(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: null, raw: true }));
+    } catch (err) {
+      document.getElementById('warnBox').classList.add('show');
+      document.getElementById('warnBox').textContent = err.message;
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+function exportAOA() {
+  const g = globals(), cols = visibleCols();
+  const aoa = [cols.map(c => c.label)];
+  for (const row of State.rows) {
+    const c = computeRow(row, g);
+    aoa.push(cols.map(col => {
+      if (col.key === 'expiry') return row.expiry ? formatDisplayDT(row.expiry) : '';
+      if (col.key === 'K') return row.K;
+      if (col.key === 'iv') return row.iv;
+      return c[col.key];
+    }));
+  }
+  return aoa;
+}
+function exportExcel() {
+  if (!window.XLSX) return;
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(exportAOA()), 'Chain');
+  XLSX.writeFile(wb, 'bsm-chain.xlsx');
+}
+function exportCSV() {
+  const csv = exportAOA().map(r => r.map(v => {
+    const s = v == null ? '' : String(v);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }).join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  a.download = 'bsm-chain.csv'; a.click();
+}
+
+function syncSpot(S) {
+  const sl = document.getElementById('slS');
+  if (S < +sl.min) sl.min = Math.floor(S * 0.7);
+  if (S > +sl.max) sl.max = Math.ceil(S * 1.3);
+  sl.value = S; document.getElementById('slSVal').textContent = String(S);
+}
+
+function wire() {
+  const now = new Date(); const exp = new Date(now.getTime() + 29 * 86400000);
+  exp.setHours(18, 0, 0, 0); now.setMinutes(0, 0, 0);
+  document.getElementById('gCurrent').value = toLocalInput(now);
+  document.getElementById('gExpiry').value = toLocalInput(exp);
+  document.getElementById('slDays').value = 29;
+  document.getElementById('slDaysVal').textContent = '29d';
+  State.rows = demoRows();
+  fullRefresh();
+
+  document.getElementById('panelSeg').addEventListener('click', e => {
+    const b = e.target.closest('button[data-panel]');
+    if (!b) return;
+    document.querySelectorAll('#panelSeg button').forEach(x => x.classList.toggle('on', x === b));
+    document.querySelectorAll('.panel').forEach(p => p.classList.toggle('on', p.id === 'panel-' + b.dataset.panel));
+  });
+
+  document.getElementById('togFormulas').addEventListener('change', e => {
+    document.body.classList.toggle('hide-formulas', !e.target.checked);
+    fullRefresh();
+  });
+  document.getElementById('togCalls').addEventListener('change', e => { State.show.calls = e.target.checked; fullRefresh(); });
+  document.getElementById('togPuts').addEventListener('change', e => { State.show.puts = e.target.checked; fullRefresh(); });
+  document.getElementById('togExtra').addEventListener('change', e => { State.show.extra = e.target.checked; fullRefresh(); });
+  document.getElementById('togParity').addEventListener('change', e => { State.show.parity = e.target.checked; fullRefresh(); });
+  document.getElementById('togGreekEdit').addEventListener('change', e => { State.show.greekEdit = e.target.checked; fullRefresh(); });
+
+  ['gS', 'gR', 'gQ', 'gDays', 'gCurrent'].forEach(id => {
+    document.getElementById(id).addEventListener('input', () => {
+      if (id === 'gS') syncSpot(+document.getElementById('gS').value);
+      if (id === 'gR') {
+        const r = +document.getElementById('gR').value;
+        document.getElementById('slR').value = r * 100;
+        document.getElementById('slRVal').textContent = (r * 100).toFixed(2) + '%';
+      }
+      if (id === 'gQ') {
+        const q = +document.getElementById('gQ').value;
+        document.getElementById('slQ').value = q * 100;
+        document.getElementById('slQVal').textContent = (q * 100).toFixed(2) + '%';
+      }
+      scheduleRefresh();
+    });
+  });
+
+  document.getElementById('slS').addEventListener('input', e => {
+    document.getElementById('gS').value = e.target.value;
+    document.getElementById('slSVal').textContent = e.target.value;
+    scheduleRefresh();
+  });
+  document.getElementById('slR').addEventListener('input', e => {
+    document.getElementById('gR').value = (+e.target.value / 100).toFixed(6);
+    document.getElementById('slRVal').textContent = (+e.target.value).toFixed(2) + '%';
+    scheduleRefresh();
+  });
+  document.getElementById('slQ').addEventListener('input', e => {
+    document.getElementById('gQ').value = (+e.target.value / 100).toFixed(6);
+    document.getElementById('slQVal').textContent = (+e.target.value).toFixed(2) + '%';
+    scheduleRefresh();
+  });
+  document.getElementById('slIVbump').addEventListener('input', e => {
+    State.ivBump = +e.target.value / 100;
+    document.getElementById('slIVbumpVal').textContent = (+e.target.value).toFixed(1);
+    scheduleRefresh();
+  });
+  document.getElementById('slDays').addEventListener('input', e => {
+    document.getElementById('slDaysVal').textContent = e.target.value + 'd';
+  });
+  document.getElementById('slKshift').addEventListener('input', e => {
+    State.kShift = +e.target.value;
+    document.getElementById('slKshiftVal').textContent = e.target.value;
+    scheduleRefresh();
+  });
+
+  document.getElementById('filterTag').addEventListener('change', e => { State.filterTag = e.target.value; scheduleRefresh(); });
+  document.getElementById('sortMode').addEventListener('change', e => { State.sortMode = e.target.value; scheduleRefresh(); });
+  document.getElementById('shockSize').addEventListener('change', renderSelectedPanel);
+
+  const body = document.getElementById('chainBody');
+  body.addEventListener('change', e => {
+    const gin = e.target.closest('input[data-greek]');
+    if (gin) {
+      const tr = gin.closest('tr');
+      const row = State.rows.find(r => r.id === tr.dataset.id);
+      const target = +gin.value;
+      if (!row || !Number.isFinite(target)) return;
+      const res = applySolveToRow(row, gin.dataset.solve, gin.dataset.greek, target);
+      setMsg(res.ok ? `Greek edit OK → ${gin.dataset.solve}` : (res.reason || 'Failed'), res.ok);
+      scheduleRefresh();
+      return;
+    }
+  });
+  body.addEventListener('input', e => {
+    const inp = e.target.closest('input[data-f]');
+    if (!inp) return;
+    const row = State.rows.find(r => r.id === inp.closest('tr').dataset.id);
+    if (!row) return;
+    if (inp.dataset.f === 'expiry') row.expiry = parseLocalInput(inp.value);
+    else if (inp.dataset.f === 'K') { const v = +inp.value; if (Number.isFinite(v)) row.K = v; }
+    else if (inp.dataset.f === 'iv') { const v = parseIV(inp.value); if (Number.isFinite(v)) row.iv = v; }
+    scheduleRefresh();
+  });
+  body.addEventListener('click', e => {
+    const del = e.target.closest('[data-del]');
+    if (del) {
+      State.rows = State.rows.filter(r => r.id !== del.dataset.del);
+      if (State.selectedId === del.dataset.del) State.selectedId = null;
+      scheduleRefresh(); return;
+    }
+    const tr = e.target.closest('tr[data-id]');
+    if (tr && !e.target.closest('input')) { State.selectedId = tr.dataset.id; scheduleRefresh(); }
+  });
+
+  document.getElementById('btnSolveSelected').addEventListener('click', () => runSolver('selected'));
+  document.getElementById('btnSolveAll').addEventListener('click', () => runSolver('all'));
+  document.getElementById('btnDeltaLadder').addEventListener('click', buildDeltaLadder);
+
+  document.getElementById('btnColApply').addEventListener('click', () => {
+    const op = document.getElementById('colOp').value;
+    const val = +document.getElementById('colValue').value;
+    applyColumnOp(op, val);
+    State.colBumpBase = cloneRows(State.rows);
+    document.getElementById('colBumpSl').value = 0;
+    document.getElementById('colBumpVal').textContent = '0';
+  });
+  document.getElementById('btnColPlus').addEventListener('click', () => {
+    const val = Math.abs(+document.getElementById('colValue').value) || 0.01;
+    applyColumnOp('add', val);
+  });
+  document.getElementById('btnColMinus').addEventListener('click', () => {
+    const val = Math.abs(+document.getElementById('colValue').value) || 0.01;
+    applyColumnOp('add', -val);
+  });
+  document.getElementById('btnColSnap').addEventListener('click', captureColBumpBase);
+  document.getElementById('btnColUndo').addEventListener('click', () => {
+    if (!State.colUndo) { setColMsg('Nothing to undo.', false); return; }
+    State.rows = cloneRows(State.colUndo);
+    setColMsg('Undid last column op.', true);
+    scheduleRefresh();
+  });
+  document.getElementById('colBumpSl').addEventListener('input', applyColBumpFromSlider);
+  document.getElementById('colName').addEventListener('change', () => {
+    State.colBumpBase = cloneRows(State.rows);
+    document.getElementById('colBumpSl').value = 0;
+    document.getElementById('colBumpVal').textContent = '0';
+  });
+
+  // Sidebar bulk shortcuts
+  const syncSideCol = () => {
+    document.getElementById('colName').value = document.getElementById('sideColName').value;
+  };
+  document.getElementById('sideColSet').addEventListener('click', () => {
+    syncSideCol();
+    document.getElementById('colOp').value = 'set';
+    applyColumnOp('set', +document.getElementById('sideColVal').value);
+  });
+  document.getElementById('sideColAdd').addEventListener('click', () => {
+    syncSideCol();
+    applyColumnOp('add', Math.abs(+document.getElementById('sideColVal').value) || 0.01);
+  });
+  document.getElementById('sideColSub').addEventListener('click', () => {
+    syncSideCol();
+    applyColumnOp('add', -(Math.abs(+document.getElementById('sideColVal').value) || 0.01));
+  });
+
+  document.getElementById('btnSideDeltaK').addEventListener('click', () => {
+    const row = State.rows.find(r => r.id === State.selectedId);
+    const t = +document.getElementById('sideDelta').value;
+    if (!row) return setMsg('Select a row', false);
+    const res = applySolveToRow(row, 'K', 'deltaCall', t);
+    setMsg(res.ok ? `Δ→K = ${fmt(res.value, 2)}` : res.reason, res.ok);
+    scheduleRefresh();
+  });
+  document.getElementById('btnSideDeltaIV').addEventListener('click', () => {
+    const row = State.rows.find(r => r.id === State.selectedId);
+    const t = +document.getElementById('sideDelta').value;
+    if (!row) return setMsg('Select a row', false);
+    const res = applySolveToRow(row, 'sigma', 'deltaCall', t);
+    setMsg(res.ok ? `Δ→IV = ${fmtPct(res.value, 2)}` : res.reason, res.ok);
+    scheduleRefresh();
+  });
+  document.getElementById('btnSidePriceIV').addEventListener('click', () => {
+    const row = State.rows.find(r => r.id === State.selectedId);
+    const t = +document.getElementById('sidePrice').value;
+    if (!row) return setMsg('Select a row', false);
+    const res = applySolveToRow(row, 'sigma', 'priceCall', t);
+    setMsg(res.ok ? `Price→IV = ${fmtPct(res.value, 2)}` : res.reason, res.ok);
+    scheduleRefresh();
+  });
+
+  document.getElementById('fileExcel').addEventListener('change', e => {
+    if (e.target.files?.[0]) handleFile(e.target.files[0]);
+    e.target.value = '';
+  });
+  document.getElementById('btnExport').addEventListener('click', exportExcel);
+  document.getElementById('btnExportCSV').addEventListener('click', exportCSV);
+  document.getElementById('btnPrint').addEventListener('click', () => print());
+  document.getElementById('btnAddRow').addEventListener('click', () => {
+    const last = State.rows[State.rows.length - 1];
+    const step = +document.getElementById('gStrikeStep').value || 25;
+    State.rows.push({
+      id: uid(),
+      K: last ? last.K + step : +document.getElementById('gS').value,
+      iv: last ? last.iv : 0.2,
+      expiry: last?.expiry || parseLocalInput(document.getElementById('gExpiry').value)
+    });
+    scheduleRefresh();
+  });
+  document.getElementById('btnResetDemo').addEventListener('click', () => {
+    State.ivBump = 0; State.kShift = 0; State.selectedId = null;
+    document.getElementById('slIVbump').value = 0; document.getElementById('slKshift').value = 0;
+    document.getElementById('slIVbumpVal').textContent = '0.0'; document.getElementById('slKshiftVal').textContent = '0';
+    State.rows = demoRows(); fullRefresh();
+  });
+  document.getElementById('btnApplyExpiryAll').addEventListener('click', () => {
+    const exp = parseLocalInput(document.getElementById('gExpiry').value);
+    if (!exp) return;
+    State.rows.forEach(r => { r.expiry = new Date(exp); });
+    scheduleRefresh();
+  });
+  document.getElementById('btnApplyDaysAll').addEventListener('click', () => {
+    const cur = parseLocalInput(document.getElementById('gCurrent').value);
+    const days = +document.getElementById('slDays').value;
+    if (!cur) return;
+    const exp = new Date(cur.getTime() + days * 86400000);
+    document.getElementById('gExpiry').value = toLocalInput(exp);
+    State.rows.forEach(r => { r.expiry = new Date(exp); });
+    scheduleRefresh();
+  });
+  document.getElementById('btnFlatIV').addEventListener('click', () => {
+    const iv = (+document.getElementById('gFlatIV').value) / 100;
+    State.rows.forEach(r => { r.iv = iv; });
+    State.ivBump = 0; document.getElementById('slIVbump').value = 0;
+    scheduleRefresh();
+  });
+  document.getElementById('btnBakeBump').addEventListener('click', () => {
+    State.rows.forEach(r => { r.iv = effectiveIV(r); });
+    State.ivBump = 0; document.getElementById('slIVbump').value = 0;
+    document.getElementById('slIVbumpVal').textContent = '0.0';
+    scheduleRefresh();
+  });
+  document.getElementById('btnApplyKshift').addEventListener('click', () => {
+    State.rows.forEach(r => { r.K = effectiveK(r); });
+    State.kShift = 0; document.getElementById('slKshift').value = 0;
+    document.getElementById('slKshiftVal').textContent = '0';
+    scheduleRefresh();
+  });
+}
+
+wire();
+</script>
+</body>
+</html>
