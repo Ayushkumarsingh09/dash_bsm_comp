@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>BSM Graph Atlas · Cross-Plot &amp; Regime Analysis</title>
+<script>
+window.CDN_STATUS = { chartjs: false };
+</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"
+  onload="window.CDN_STATUS.chartjs=true"
+  onerror="console.warn('Chart.js CDN failed')"></script>
+<script src="js/bsm-engine.js"></script>
+<style>
+:root {
+  --bg: #0b0e14; --bg2: #12161f; --bg3: #1a2030; --bg4: #222a3a;
+  --border: #2a3344; --border2: #3a4558; --text: #e6edf7; --muted: #8b95a8;
+  --accent: #3d9cf0; --accent2: #2dd4bf; --up: #22c55e; --down: #ef4444;
+  --flat: #94a3b8; --cond: #f59e0b; --warn: #f97316;
+  --font: "Segoe UI", "IBM Plex Sans", system-ui, sans-serif;
+  --mono: "Cascadia Code", "Consolas", "SF Mono", monospace;
+  --radius: 6px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body { font-family: var(--font); background: var(--bg); color: var(--text); font-size: 13px; line-height: 1.45; }
+a { color: var(--accent); }
+button, input, select { font: inherit; color: inherit; }
+.app-header {
+  position: sticky; top: 0; z-index: 100;
+  background: var(--bg2); border-bottom: 1px solid var(--border);
+  padding: 10px 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+}
+.brand { font-weight: 700; letter-spacing: 0.04em; font-size: 15px; }
+.brand span { color: var(--accent2); }
+.nav { display: flex; flex-wrap: wrap; gap: 6px; }
+.nav a, .nav button {
+  background: transparent; border: 1px solid var(--border);
+  padding: 6px 12px; border-radius: var(--radius); cursor: pointer;
+  color: var(--muted); text-decoration: none; display: inline-block;
+}
+.nav a.active, .nav a:hover, .nav button.active, .nav button:hover {
+  background: var(--bg4); color: var(--text); border-color: var(--border2);
+}
+.status-pill {
+  margin-left: auto; padding: 4px 10px; border-radius: 999px;
+  border: 1px solid var(--border); font-size: 11px; font-family: var(--mono);
+}
+.status-pill.ok { color: #22c55e; border-color: #166534; background: #052e16; }
+.status-pill.warn { color: var(--warn); border-color: #9a3412; background: #431407; }
+.params-bar {
+  background: var(--bg2); border-bottom: 1px solid var(--border);
+  padding: 10px 16px; display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end;
+}
+.field { display: flex; flex-direction: column; gap: 3px; min-width: 86px; }
+.field label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.field input, .field select {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
+  padding: 6px 8px; font-family: var(--mono);
+}
+.field input:focus, .field select:focus { outline: 1px solid var(--accent); }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+.seg button {
+  background: transparent; border: none; padding: 6px 12px; cursor: pointer; color: var(--muted);
+}
+.seg button.active { background: var(--bg4); color: var(--text); }
+.btn {
+  background: var(--bg4); border: 1px solid var(--border2);
+  padding: 6px 10px; border-radius: 4px; cursor: pointer; color: var(--text);
+}
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: #1e3a5f; border-color: var(--accent); }
+.btn.sm { padding: 4px 8px; font-size: 11px; }
+.tabs {
+  display: flex; flex-wrap: wrap; gap: 4px; padding: 10px 16px 0;
+  border-bottom: 1px solid var(--border); background: var(--bg);
+}
+.tabs button {
+  background: transparent; border: 1px solid transparent; border-bottom: none;
+  padding: 8px 14px; cursor: pointer; color: var(--muted); border-radius: 6px 6px 0 0;
+}
+.tabs button.active { background: var(--bg2); color: var(--text); border-color: var(--border); }
+.page { display: none; padding: 16px; max-width: 1680px; margin: 0 auto; }
+.page.active { display: block; }
+.card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 12px;
+}
+.card h2, .card h3 {
+  font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--muted); margin-bottom: 10px; font-weight: 600;
+}
+.card h2 { font-size: 13px; color: var(--text); }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; }
+.grid { display: grid; gap: 12px; }
+.grid-main { grid-template-columns: 300px 1fr; }
+.grid-side { grid-template-columns: 1fr 340px; }
+@media (max-width: 1100px) {
+  .grid-main, .grid-side { grid-template-columns: 1fr; }
+}
+.chart-wrap { position: relative; height: 420px; }
+.chart-wrap.tall { height: 480px; }
+.muted { color: var(--muted); }
+.mono { font-family: var(--mono); }
+.footnote {
+  margin-top: 8px; font-size: 11px; color: var(--muted); font-style: italic;
+  border-left: 2px solid var(--border2); padding-left: 8px;
+}
+.chk { display: inline-flex; align-items: center; gap: 5px; margin: 3px 10px 3px 0; cursor: pointer; font-size: 12px; }
+.metric-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+.metric {
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 4px; padding: 8px;
+}
+.metric .name { font-size: 10px; color: var(--muted); text-transform: uppercase; }
+.metric .val { font-family: var(--mono); font-size: 14px; margin-top: 2px; }
+.analysis {
+  font-size: 12.5px; color: #cbd5e1;
+}
+.analysis li { margin: 0 0 7px 16px; }
+.analysis .tag {
+  display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 3px;
+  border: 1px solid var(--border); margin-right: 4px; font-family: var(--mono);
+}
+.tag.up { color: var(--up); } .tag.down { color: var(--down); }
+.tag.peak { color: var(--cond); } .tag.zero { color: var(--accent2); }
+.tag.cond { color: var(--cond); }
+.atlas-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px;
+}
+.tile {
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 6px;
+  padding: 8px; cursor: pointer;
+}
+.tile:hover, .tile.active { border-color: var(--accent); background: #152033; }
+.tile h4 { font-size: 11px; color: var(--text); margin-bottom: 4px; font-weight: 600; }
+.tile canvas { width: 100%; height: 90px; display: block; background: var(--bg); border-radius: 4px; }
+.tile .meta { font-size: 10px; color: var(--muted); font-family: var(--mono); margin-top: 4px; }
+.regime-legend { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.regime-legend span { font-size: 11px; display: inline-flex; align-items: center; gap: 5px; }
+.swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.table-scroll { overflow: auto; max-width: 100%; border: 1px solid var(--border); border-radius: 4px; }
+table.matrix {
+  border-collapse: separate; border-spacing: 0; width: max-content; min-width: 100%;
+  font-family: var(--mono); font-size: 11px;
+}
+table.matrix th, table.matrix td {
+  border-bottom: 1px solid var(--border); border-right: 1px solid var(--border);
+  padding: 6px 8px; text-align: center; white-space: nowrap; background: var(--bg2);
+}
+table.matrix thead th { position: sticky; top: 0; z-index: 2; background: var(--bg3); font-size: 10px; text-transform: uppercase; color: var(--muted); }
+table.matrix td.sticky, table.matrix th.sticky { position: sticky; left: 0; text-align: left; background: var(--bg3); }
+table.matrix td.cell { cursor: pointer; }
+table.matrix td.cell:hover { background: var(--bg4); }
+.arrow-up { color: var(--up); } .arrow-down { color: var(--down); }
+.arrow-flat { color: var(--flat); } .arrow-cond { color: var(--cond); }
+.warn-box {
+  background: #431407; border: 1px solid #9a3412; color: #fed7aa;
+  padding: 8px; border-radius: 4px; margin: 8px 16px; font-size: 12px; display: none;
+}
+.warn-box.show { display: block; }
+.y-picks { max-height: 220px; overflow: auto; border: 1px solid var(--border); border-radius: 4px; padding: 6px; background: var(--bg); }
+#heatmapCanvas, #surfaceCanvas { display: block; max-width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; }
+.facet-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
+.facet-grid .chart-wrap { height: 220px; }
+hr.sep { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+.section { margin-top: 16px; }
+</style>
+</head>
+<body>
+<header class="app-header">
+  <div class="brand">BSM <span>GRAPH ATLAS</span></div>
+  <nav class="nav">
+    <a href="index.html">Sensitivity Lab</a>
+    <a href="chain.html">Chain Workbook</a>
+    <a href="atlas.html" class="active">Graph Atlas</a>
+  </nav>
+  <div class="status-pill warn" id="modelStatus">Model Status: …</div>
+</header>
+
+<div id="warnGlobal" class="warn-box"></div>
+
+<div class="params-bar" id="paramsBar">
+  <div class="seg" id="optTypeSeg">
+    <button data-type="call" class="active">Call</button>
+    <button data-type="put">Put</button>
+  </div>
+  <div class="field"><label>Spot S</label><input id="inpS" type="number" step="0.01" value="100"></div>
+  <div class="field"><label>Strike K</label><input id="inpK" type="number" step="0.01" value="100"></div>
+  <div class="field"><label>σ</label><input id="inpSigma" type="number" step="0.001" value="0.20"></div>
+  <div class="field"><label>T (years)</label><input id="inpT" type="number" step="0.001" value="0.082192"></div>
+  <div class="field"><label>r</label><input id="inpR" type="number" step="0.001" value="0.05"></div>
+  <div class="field"><label>q</label><input id="inpQ" type="number" step="0.001" value="0"></div>
+  <div class="field"><label>Day count</label>
+    <select id="inpDayCount"><option value="365" selected>ACT/365</option><option value="252">ACT/252</option></select>
+  </div>
+  <div class="field"><label>Units</label>
+    <select id="inpUnits"><option value="unit" selected>Per unit</option><option value="pct">Per 1%</option></select>
+  </div>
+  <div class="field"><label>Theta</label>
+    <select id="inpTheta"><option value="year" selected>Annual</option><option value="day">Daily</option></select>
+  </div>
+  <button class="btn primary" id="btnApply">Apply &amp; Render</button>
+  <button class="btn sm" id="btnReset">Reset</button>
+</div>
+
+<div class="tabs" id="mainTabs">
+  <button data-page="builder" class="active">Custom Builder</button>
+  <button data-page="atlas">Full Compilation</button>
+  <button data-page="regimes">Regime Lab</button>
+  <button data-page="cross">Greek × Greek</button>
+  <button data-page="heat">Heatmap &amp; Surface</button>
+  <button data-page="compare">Call vs Put / Families</button>
+  <button data-page="matrix">Direction Matrix</button>
+</div>
+
+<!-- BUILDER -->
+<section class="page active" id="page-builder">
+  <div class="grid grid-main">
+    <div class="card">
+      <h2>Plot controls</h2>
+      <div class="field" style="margin-bottom:8px;"><label>X axis</label>
+        <select id="bX"></select>
+      </div>
+      <div class="field" style="margin-bottom:8px;"><label>Moneyness sweep via</label>
+        <select id="bMoneySweep">
+          <option value="K" selected>Vary K (chain view)</option>
+          <option value="S">Vary S (spot path)</option>
+        </select>
+      </div>
+      <div class="field" style="margin-bottom:8px;"><label>Y metrics (overlay)</label>
+        <div class="row" style="margin-bottom:6px;">
+          <button type="button" class="btn sm" id="yPrimary">Primary</button>
+          <button type="button" class="btn sm" id="yAllGreeks">All Greeks</button>
+          <button type="button" class="btn sm" id="yNone">None</button>
+        </div>
+        <div class="y-picks" id="bYPicks"></div>
+      </div>
+      <div class="row" style="margin:8px 0;">
+        <div class="field"><label>X min</label><input id="bMin" type="number" step="any"></div>
+        <div class="field"><label>X max</label><input id="bMax" type="number" step="any"></div>
+        <div class="field"><label>Points</label><input id="bPts" type="number" min="11" max="401" value="101"></div>
+      </div>
+      <button class="btn sm" id="bResetRange">Reset X range</button>
+      <hr class="sep">
+      <h3>Regime handling</h3>
+      <div class="field" style="margin-bottom:8px;"><label>Mode</label>
+        <select id="bRegimeMode">
+          <option value="overall" selected>Overall (full sweep)</option>
+          <option value="color">Color points by regime</option>
+          <option value="overlay">Overlay each regime (rep. K)</option>
+          <option value="filter">Filter to selected regimes</option>
+        </select>
+      </div>
+      <div id="bRegimeChecks"></div>
+      <hr class="sep">
+      <h3>Display</h3>
+      <label class="chk"><input type="checkbox" id="bNormalize"> Normalize Y to [0,1]</label>
+      <label class="chk"><input type="checkbox" id="bLogY"> Log |Y|</label>
+      <label class="chk"><input type="checkbox" id="bShowATM" checked> Mark ATM / current</label>
+      <hr class="sep">
+      <button class="btn primary" id="bRender">Render chart</button>
+      <button class="btn sm" id="bExportCsv">Export CSV</button>
+      <button class="btn sm" id="bExportPng">Export PNG</button>
+    </div>
+    <div>
+      <div class="card">
+        <h2 id="bTitle">Custom plot</h2>
+        <div class="regime-legend" id="bLegend"></div>
+        <div class="chart-wrap tall"><canvas id="bChart"></canvas></div>
+        <div id="bFallback" class="muted" style="display:none;">Chart.js unavailable — using analysis table only.</div>
+      </div>
+      <div class="section card">
+        <h2>Live snapshot at current params</h2>
+        <div class="metric-grid" id="bSnapshot"></div>
+      </div>
+      <div class="section grid grid-side">
+        <div class="card">
+          <h2>Engine analysis</h2>
+          <div class="analysis" id="bAnalysis">Render a chart to generate analysis.</div>
+        </div>
+        <div class="card">
+          <h2>Series statistics</h2>
+          <div class="table-scroll" id="bStats"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- COMPILATION -->
+<section class="page" id="page-atlas">
+  <div class="card">
+    <h2>Full graph compilation</h2>
+    <p class="muted" style="margin-bottom:10px;">Every Greek against every driver (spot, strike, moneyness, σ, T, r, q). Values come from the BSM engine — click a tile to open it in the Custom Builder with analysis.</p>
+    <div class="row" style="margin-bottom:10px;">
+      <div class="field"><label>Gallery</label>
+        <select id="aMode">
+          <option value="y_vs_inputs" selected>Each selected Y vs all inputs</option>
+          <option value="greeks_vs_x">All Greeks vs selected X</option>
+          <option value="full">Full matrix (13 × 7)</option>
+        </select>
+      </div>
+      <div class="field"><label>Y (for first mode)</label><select id="aY"></select></div>
+      <div class="field"><label>X (for second mode)</label><select id="aX"></select></div>
+      <div class="field"><label>Style</label>
+        <select id="aStyle">
+          <option value="overall" selected>Overall sweep</option>
+          <option value="overlay">Regime overlay</option>
+        </select>
+      </div>
+      <button class="btn primary" id="aRender">Build gallery</button>
+    </div>
+    <div class="regime-legend" id="aLegend"></div>
+  </div>
+  <div class="section atlas-grid" id="aGrid"></div>
+  <p class="footnote">Tiles are sparkline previews (21–41 points). Open in Custom Builder for high-resolution analysis, families, and CSV/PNG export. Regime overlay uses representative strikes at the current S, σ, T, r, q.</p>
+</section>
+
+<!-- REGIME LAB -->
+<section class="page" id="page-regimes">
+  <div class="card">
+    <h2>Regime lab — overall + ITM / ATM / OTM / deep</h2>
+    <div class="row">
+      <div class="field"><label>X</label><select id="rX"></select></div>
+      <div class="field"><label>Y</label><select id="rY"></select></div>
+      <div class="field"><label>Points</label><input id="rPts" type="number" min="21" max="201" value="81"></div>
+      <button class="btn primary" id="rRender">Render regimes</button>
+    </div>
+    <p class="muted" style="margin-top:8px;">Overall uses the current (S, K). Each regime uses a representative K such that signed ln(F/K) sits in that band, then sweeps X. When X is moneyness, overall already spans all bands — regime charts still reprice at the representative centre.</p>
+  </div>
+  <div class="section facet-grid" id="rFacets"></div>
+  <div class="section card">
+    <h2>Cross-regime comparison</h2>
+    <div class="table-scroll" id="rTable"></div>
+    <div class="analysis" id="rAnalysis" style="margin-top:12px;"></div>
+  </div>
+</section>
+
+<!-- GREEK x GREEK -->
+<section class="page" id="page-cross">
+  <div class="card">
+    <h2>Greek vs Greek (parametric)</h2>
+    <p class="muted" style="margin-bottom:8px;">A Greek does not “cause” another Greek. These plots are parametric: a driver (usually spot or moneyness) traces a path in (Greek A, Greek B) space. Color = moneyness regime.</p>
+    <div class="row">
+      <div class="field"><label>Driver</label><select id="cDriver"></select></div>
+      <div class="field"><label>X Greek</label><select id="cGX"></select></div>
+      <div class="field"><label>Y Greek</label><select id="cGY"></select></div>
+      <div class="field"><label>Points</label><input id="cPts" type="number" min="21" max="401" value="121"></div>
+      <button class="btn primary" id="cRender">Render pair</button>
+      <button class="btn" id="cGallery">Build primary-pair gallery</button>
+    </div>
+  </div>
+  <div class="section card">
+    <h2 id="cTitle">Parametric path</h2>
+    <div class="regime-legend" id="cLegend"></div>
+    <div class="chart-wrap tall"><canvas id="cChart"></canvas></div>
+    <div class="analysis" id="cAnalysis" style="margin-top:10px;"></div>
+  </div>
+  <div class="section atlas-grid" id="cGrid"></div>
+</section>
+
+<!-- HEATMAP -->
+<section class="page" id="page-heat">
+  <div class="card">
+    <h2>2D heatmap — any input vs any input</h2>
+    <div class="row">
+      <div class="field"><label>X</label><select id="hX"></select></div>
+      <div class="field"><label>Y</label><select id="hY"></select></div>
+      <div class="field"><label>Color Z</label><select id="hZ"></select></div>
+      <div class="field"><label>Resolution</label><input id="hRes" type="number" min="16" max="80" value="40"></div>
+      <div class="field"><label>Restrict S/K to regime</label>
+        <select id="hRegime"><option value="all" selected>All (overall)</option></select>
+      </div>
+      <button class="btn primary" id="hRender">Render heatmap</button>
+    </div>
+    <div class="heatmap-wrap" style="margin-top:10px;overflow:auto;">
+      <canvas id="heatmapCanvas" width="860" height="480"></canvas>
+    </div>
+    <p class="footnote" id="hFoot"></p>
+  </div>
+  <div class="section card">
+    <h2>3D surface</h2>
+    <div class="row">
+      <div class="field"><label>X</label><select id="sX"></select></div>
+      <div class="field"><label>Y</label><select id="sY"></select></div>
+      <div class="field"><label>Z</label><select id="sZ"></select></div>
+      <button class="btn primary" id="sRender">Render surface</button>
+    </div>
+    <canvas id="surfaceCanvas" width="860" height="480" style="margin-top:10px;"></canvas>
+  </div>
+</section>
+
+<!-- COMPARE / FAMILIES -->
+<section class="page" id="page-compare">
+  <div class="card">
+    <h2>Call vs Put and family curves</h2>
+    <div class="row">
+      <div class="field"><label>X</label><select id="fX"></select></div>
+      <div class="field"><label>Y</label><select id="fY"></select></div>
+      <div class="field"><label>Family parameter</label>
+        <select id="fFam">
+          <option value="none">None (call vs put only)</option>
+          <option value="T" selected>Time T</option>
+          <option value="sigma">Volatility σ</option>
+          <option value="r">Rate r</option>
+          <option value="q">Dividend q</option>
+          <option value="K">Strike K</option>
+        </select>
+      </div>
+      <div class="field" style="min-width:220px;flex:1;"><label>Family levels (comma-separated)</label>
+        <input id="fLevels" value="0.02, 0.08, 0.25, 1.00" style="font-family:var(--mono);">
+      </div>
+      <label class="chk"><input type="checkbox" id="fBothTypes" checked> Overlay call &amp; put</label>
+      <button class="btn primary" id="fRender">Render families</button>
+    </div>
+  </div>
+  <div class="section card">
+    <h2 id="fTitle">Family plot</h2>
+    <div class="chart-wrap tall"><canvas id="fChart"></canvas></div>
+    <div class="analysis" id="fAnalysis" style="margin-top:10px;"></div>
+  </div>
+</section>
+
+<!-- DIRECTION MATRIX -->
+<section class="page" id="page-matrix">
+  <div class="card">
+    <h2>Local direction matrix by regime</h2>
+    <p class="muted" style="margin-bottom:8px;">If this input increases, does the Greek rise or fall? Arrows are finite-difference from the engine at a representative point in each regime — not hardcoded intuition. ± means the sign is not stable across nearby probes.</p>
+    <div class="row">
+      <div class="field"><label>Input bump</label>
+        <select id="mInput">
+          <option value="S" selected>Spot S ↑</option>
+          <option value="K">Strike K ↑</option>
+          <option value="sigma">σ ↑</option>
+          <option value="T">T ↑</option>
+          <option value="r">r ↑</option>
+          <option value="q">q ↑</option>
+        </select>
+      </div>
+      <button class="btn primary" id="mRender">Rebuild matrix</button>
+    </div>
+  </div>
+  <div class="section card">
+    <div class="table-scroll" id="mTable"></div>
+    <p class="footnote">Universal / Typical / Conditional is diagnosed by probing several (σ, T) neighbours inside the same moneyness band. Click a cell for the numerical bump.</p>
+    <div class="analysis" id="mDetail" style="margin-top:10px;">Click a cell for detail.</div>
+  </div>
+</section>
+
+<script src="js/atlas.js"></script>
+</body>
+</html>
