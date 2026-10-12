@@ -2129,6 +2129,168 @@
     };
   }
 
+  const GREEK_DIALS = [
+    { key: 'delta', label: 'Delta', min: -0.2, max: 0.2, step: 0.005, scale: 0.02, get: (g) => g.sum.delta },
+    { key: 'gamma', label: 'Gamma × 10⁴', min: -8, max: 8, step: 0.05, scale: 1, get: (g) => g.sum.gamma * 1e4 },
+    { key: 'vega', label: 'Vega / vol pt', min: -8, max: 8, step: 0.05, scale: 0.4, get: (g) => g.sum.vega / 100 },
+    { key: 'vanna', label: 'Vanna', min: -3, max: 3, step: 0.02, scale: 0.25, get: (g) => g.sum.vanna },
+    { key: 'volga', label: 'Volga', min: -2, max: 2, step: 0.02, scale: 0.2, get: (g) => g.sum.vomma / 10000 },
+    { key: 'theta', label: 'Theta / day', min: -1.5, max: 1.5, step: 0.01, scale: 0.08, get: (g) => g.sum.theta / 365 },
+    { key: 'rho', label: 'Rho', min: -200, max: 200, step: 1, scale: 25, get: (g) => g.sum.rho },
+    { key: 'charm', label: 'Charm', min: -0.5, max: 0.5, step: 0.005, scale: 0.05, get: (g) => g.sum.charm },
+    { key: 'color', label: 'Color × 10³', min: -8, max: 8, step: 0.05, scale: 0.6, get: (g) => g.sum.color * 1e3 },
+    { key: 'speed', label: 'Speed × 10⁶', min: -4, max: 4, step: 0.05, scale: 0.4, get: (g) => g.sum.speed * 1e6 }
+  ];
+  const DIAL_DRIVERS = [
+    ['dS', 0.002, 0.12],
+    ['dAtm', 0.001, 0.06],
+    ['dPut', 0.02, 0.4],
+    ['dCall', 0.02, 0.4],
+    ['dCurv', 0.08, 1.6],
+    ['dDays', 0.5, 30],
+    ['dr', 0.0001, 0.01],
+    ['dWing', 0.02, 0.3]
+  ];
+
+  function zeroGreekDials() {
+    const o = {};
+    for (const d of GREEK_DIALS) o[d.key] = 0;
+    return o;
+  }
+  function dialVector(m) {
+    const w = resolveWings(m);
+    if (!w.ordered) return null;
+    const g = greeksOf(m, unitLegs(m, w));
+    const v = {};
+    for (const d of GREEK_DIALS) v[d.key] = d.get(g);
+    return v;
+  }
+  function solveSquare(A, b) {
+    const n = b.length;
+    const M = A.map((row, i) => row.concat(b[i]));
+    for (let c = 0; c < n; c++) {
+      let piv = c;
+      for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[piv][c])) piv = r;
+      if (Math.abs(M[piv][c]) < 1e-14) return null;
+      const hold = M[c];
+      M[c] = M[piv];
+      M[piv] = hold;
+      const div = M[c][c];
+      for (let k = c; k <= n; k++) M[c][k] /= div;
+      for (let r = 0; r < n; r++) {
+        if (r === c) continue;
+        const f = M[r][c];
+        for (let k = c; k <= n; k++) M[r][k] -= f * M[c][k];
+      }
+    }
+    return M.map((row) => row[n]);
+  }
+  function dialStep(base, residual, activeIdx) {
+    const nX = DIAL_DRIVERS.length;
+    const nR = activeIdx.length;
+    const origin = dialVector(base);
+    const J = activeIdx.map(() => new Array(nX).fill(0));
+    for (let k = 0; k < nX; k++) {
+      const h = DIAL_DRIVERS[k][1];
+      const bump = zeroShocks();
+      bump[DIAL_DRIVERS[k][0]] = h;
+      const moved = dialVector(applyShockValues(base, bump));
+      for (let r = 0; r < nR; r++) {
+        const key = GREEK_DIALS[activeIdx[r]].key;
+        J[r][k] = moved && origin ? (moved[key] - origin[key]) / h : 0;
+      }
+    }
+    if (nR === 1) {
+      let best = -1;
+      let bestAbs = 0;
+      for (let k = 0; k < nX; k++) {
+        if (Math.abs(J[0][k]) > bestAbs) { bestAbs = Math.abs(J[0][k]); best = k; }
+      }
+      const x = new Array(nX).fill(0);
+      if (best >= 0 && bestAbs > 1e-12) x[best] = residual[GREEK_DIALS[activeIdx[0]].key] / J[0][best];
+      return x;
+    }
+    const AtA = Array.from({ length: nX }, () => new Array(nX).fill(0));
+    const Atb = new Array(nX).fill(0);
+    for (let r = 0; r < nR; r++) {
+      const w = 1 / (GREEK_DIALS[activeIdx[r]].scale * GREEK_DIALS[activeIdx[r]].scale);
+      const rhs = residual[GREEK_DIALS[activeIdx[r]].key];
+      for (let a = 0; a < nX; a++) {
+        Atb[a] += w * J[r][a] * rhs;
+        for (let b = 0; b < nX; b++) AtA[a][b] += w * J[r][a] * J[r][b];
+      }
+    }
+    for (let a = 0; a < nX; a++) AtA[a][a] += 1e-6 * (Math.abs(AtA[a][a]) + 1);
+    return solveSquare(AtA, Atb);
+  }
+  function solveGreekDials(state, rawTargets) {
+    const targets = zeroGreekDials();
+    for (const d of GREEK_DIALS) {
+      const v = rawTargets && rawTargets[d.key];
+      if (isNum(v)) targets[d.key] = v;
+    }
+    const active = GREEK_DIALS.some((d) => Math.abs(targets[d.key]) > 1e-12);
+    const base = materialize(state);
+    if (!active) return { ok: true, active: false, state: state, targets: targets };
+    const v0 = dialVector(base);
+    if (!v0) return { ok: false, active: true, state: state, reason: 'Wings are not ordered.' };
+    const extra = zeroShocks();
+    let cursor = base;
+    let v = v0;
+    const activeIdx = [];
+    for (let i = 0; i < GREEK_DIALS.length; i++) if (Math.abs(targets[GREEK_DIALS[i].key]) > 1e-12) activeIdx.push(i);
+    for (let pass = 0; pass < 2; pass++) {
+      const residual = {};
+      for (const d of GREEK_DIALS) residual[d.key] = targets[d.key] - (v[d.key] - v0[d.key]);
+      const step = dialStep(cursor, residual, activeIdx);
+      if (!step) break;
+      for (let k = 0; k < DIAL_DRIVERS.length; k++) {
+        const name = DIAL_DRIVERS[k][0];
+        const cap = DIAL_DRIVERS[k][2];
+        extra[name] = clamp((extra[name] || 0) + 0.85 * step[k], -cap, cap);
+      }
+      cursor = applyShockValues(base, extra);
+      v = dialVector(cursor) || v;
+    }
+    const out = clone(state);
+    out.S = cursor.S;
+    out.atm = cursor.atm;
+    out.putSkew = cursor.putSkew;
+    out.callSkew = cursor.callSkew;
+    out.curvature = cursor.curvature;
+    out.asymmetry = cursor.asymmetry;
+    out.wingSteepness = cursor.wingSteepness;
+    out.days = cursor.days;
+    out.r = cursor.r;
+    out.q = cursor.q;
+    out.shocks = zeroShocks();
+    out.quoteGrid = cursor.quoteGrid;
+    delete out._pin;
+    ensureT(out);
+    const achieved = {};
+    for (const d of GREEK_DIALS) achieved[d.key] = v[d.key] - v0[d.key];
+    const drivers = [];
+    if (Math.abs(extra.dS) > 1e-6) drivers.push('spot ' + (extra.dS * 100).toFixed(2) + '%');
+    if (Math.abs(extra.dAtm) > 1e-6) drivers.push('ATM ' + (extra.dAtm * 100).toFixed(2) + ' vol pts');
+    if (Math.abs(extra.dPut) > 1e-6) drivers.push('put skew ' + units.ptsFromPut(extra.dPut).toFixed(2) + ' pts');
+    if (Math.abs(extra.dCall) > 1e-6) drivers.push('call skew ' + units.ptsFromPut(extra.dCall).toFixed(2) + ' pts');
+    if (Math.abs(extra.dCurv) > 1e-6) drivers.push('curvature ' + units.ptsFromCurv(extra.dCurv).toFixed(2) + ' pts');
+    if (Math.abs(extra.dDays) > 1e-4) drivers.push('time ' + extra.dDays.toFixed(2) + ' d');
+    if (Math.abs(extra.dr) > 1e-7) drivers.push('rate ' + (extra.dr * 10000).toFixed(1) + ' bp');
+    if (Math.abs(extra.dWing) > 1e-6) drivers.push('wing ' + units.ptsFromWing(extra.dWing).toFixed(2) + ' pts');
+    return {
+      ok: true,
+      active: true,
+      state: out,
+      targets: targets,
+      achieved: achieved,
+      level0: v0,
+      level1: v,
+      drivers: drivers,
+      note: 'Dials request a change in each package Greek. One dial is that Greek on its own. Several dials are the closest combination of spot, ATM, skew, curvature, wing, time, and rate. A gap means the smile cannot hit every request at once.'
+    };
+  }
+
   function heatmap(state, xKey, yKey, metric, n) {
     const s0 = materialize(state, zeroShocks());
     s0.quoteGrid = null;
@@ -2409,7 +2571,8 @@
     fitSVI, fitSSVI, varianceInterp, getHistory, resetHistory, linkToFinal, stateFromDay,
     assess, decompose, attributeScenario, arbitrageReport, metricOn,
     smileSeries, deltaSmile, flySweepStrike, flySweepDelta, flySweepWidth, priceFlySweep,
-    payoffSeries, greekSeries, greekMove, heatmap, historyChart, presets, chainCSV, parseCSV, applyImport,
+    payoffSeries, greekSeries, greekMove, GREEK_DIALS, zeroGreekDials, solveGreekDials,
+    heatmap, historyChart, presets, chainCSV, parseCSV, applyImport,
     quickCheck, view, fmt, businessDaysEnding, isBiz, kGrid
   };
   global.FLY = api;

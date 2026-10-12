@@ -192,6 +192,34 @@
       near(vol, m.actualSameStrikes, Math.max(1e-2, Math.abs(m.actualSameStrikes) * 0.08));
     });
 
+    test('a delta dial moves package delta toward the request', () => {
+      const s = F.defaultState();
+      s.quoteGrid = null;
+      s.linkedToFinal = false;
+      const fit = F.solveGreekDials(s, { delta: 0.05 });
+      assert(fit.ok && fit.active, 'solved');
+      assert(Math.abs(fit.achieved.delta - 0.05) < 0.02, 'delta gap ' + fit.achieved.delta);
+    });
+
+    test('delta and vega dials are pursued together', () => {
+      const s = F.defaultState();
+      s.quoteGrid = null;
+      s.linkedToFinal = false;
+      const fit = F.solveGreekDials(s, { delta: 0.04, vega: 1 });
+      assert(fit.ok && fit.active, 'solved');
+      assert(Math.abs(fit.achieved.delta) > 0.015, 'delta ' + fit.achieved.delta);
+      assert(Math.abs(fit.achieved.vega) > 0.4, 'vega ' + fit.achieved.vega);
+    });
+
+    test('zero greek dials leave the request inactive', () => {
+      const s = F.defaultState();
+      s.quoteGrid = null;
+      s.linkedToFinal = false;
+      const fit = F.solveGreekDials(s, F.zeroGreekDials());
+      assert(fit.ok && !fit.active, 'inactive');
+      assert(fit.state === s, 'same state');
+    });
+
     test('frozen-IV finite-difference delta matches analytic delta', () => {
       const s = F.defaultState();
       s.quoteGrid = null;

@@ -2,6 +2,9 @@
   const F = window.FLY;
   const history = F.getHistory();
   let state = F.linkToFinal(F.defaultState(), history);
+  state.greekDials = F.zeroGreekDials();
+  let liveFit = null;
+  let pinBookState = null;
   let chartId = 'smile';
   let pinnedState = null;
   let greekDiff = null;
@@ -85,6 +88,11 @@
     const entry = document.getElementById('entryPremium').value;
     s.entryPremium = entry === '' ? null : parseFloat(entry);
     s.sticky = document.getElementById('sticky').value;
+    if (!s.greekDials) s.greekDials = F.zeroGreekDials();
+    for (const d of F.GREEK_DIALS) {
+      const v = num('gd_' + d.key);
+      s.greekDials[d.key] = Number.isFinite(v) ? v : 0;
+    }
     z.dS = num('dS') / 100;
     z.dAtm = num('dAtm') / 100;
     z.dPut = F.units.putFromPts(num('dPut'));
@@ -145,6 +153,8 @@
     const entry = document.getElementById('entryPremium');
     if (document.activeElement !== entry) entry.value = s.entryPremium == null ? '' : s.entryPremium;
     document.getElementById('sticky').value = s.sticky;
+    const dials = s.greekDials || F.zeroGreekDials();
+    for (const d of F.GREEK_DIALS) setNum('gd_' + d.key, dials[d.key] || 0, 4);
     const z = s.shocks;
     setNum('dS', z.dS * 100, 2);
     setNum('dAtm', z.dAtm * 100, 2);
@@ -264,6 +274,13 @@
       '<button class="btn sm primary" id="saveSc" type="button">Save scenario</button>',
       '</div>',
       '<div class="field" style="margin-top:8px;"><label>Scenario name</label><input type="text" id="scName" value="Case 1" /></div>',
+      '<h3>Greek dials</h3>',
+      '<p class="muted">Move one dial to change that Greek on its own. Move several to see the combination. Charts reprice the solved market. A gap means those Greeks cannot be hit together.</p>',
+      '<div class="grid2">',
+      F.GREEK_DIALS.map((d) => field('gd_' + d.key, d.label, { min: d.min, max: d.max, step: d.step, range: true })).join(''),
+      '</div>',
+      '<div id="dialFit"></div>',
+      '<button class="btn sm" id="resetDials" type="button">Reset Greek dials</button>',
       '<h3>Heatmap axes</h3>',
       sel('heatX', 'X', [['S', 'Spot'], ['atm', 'ATM IV'], ['putSkew', 'Put skew'], ['curvature', 'Curvature'], ['width', 'Log wing'], ['days', 'DTE'], ['centerDelta', 'Center delta']]),
       sel('heatY', 'Y', [['atm', 'ATM IV'], ['S', 'Spot'], ['putSkew', 'Put skew'], ['curvature', 'Curvature'], ['width', 'Log wing'], ['days', 'DTE']]),
@@ -305,11 +322,17 @@
       state.quoteGrid = F.linkToFinal(F.defaultState(), history).quoteGrid;
       state.linkedToFinal = true;
       state.source = 'synthetic';
+      state.greekDials = F.zeroGreekDials();
       write();
       schedule();
     };
     document.getElementById('resetBase').onclick = () => {
       state.shocks = F.zeroShocks();
+      write();
+      schedule();
+    };
+    document.getElementById('resetDials').onclick = () => {
+      state.greekDials = F.zeroGreekDials();
       write();
       schedule();
     };
@@ -658,7 +681,7 @@
     }
     if (chartId === 'gmix') {
       renderChart(liveView);
-      const pinOnly = F.view(pinnedState, history);
+      const pinOnly = F.view(pinBookState || pinnedState, history);
       const pinFly = selectedFly(pinOnly);
       const liveFly = selectedFly(liveView);
       const deltaPts = (liveFly - pinFly) * 100;
@@ -673,7 +696,7 @@
     try {
       state = pinnedState;
       capture = {};
-      pinView = F.view(pinnedState, history);
+      pinView = F.view(pinBookState || pinnedState, history);
       renderChart(pinView);
       pinCap = capture;
     } finally {
@@ -707,6 +730,26 @@
     if (deltaEl) deltaEl.textContent = delta || '';
   }
 
+  function solveDials(s) {
+    if (!s) return null;
+    const fit = F.solveGreekDials(s, s.greekDials);
+    return fit && fit.ok && fit.active ? fit : null;
+  }
+  function renderDialFit(fit) {
+    const el = document.getElementById('dialFit');
+    if (!el) return;
+    if (!fit || !fit.active) {
+      el.innerHTML = '<p class="muted">Dials at zero. Turn one Greek, then add others to see the combination.</p>';
+      return;
+    }
+    const rows = F.GREEK_DIALS.filter((d) => Math.abs(fit.targets[d.key]) > 1e-12).map((d) => {
+      const gap = fit.achieved[d.key] - fit.targets[d.key];
+      return '<tr><td>' + esc(d.label) + '</td><td>' + F.fmt(fit.targets[d.key], 4) + '</td><td>' + F.fmt(fit.achieved[d.key], 4) + '</td><td>' + F.fmt(gap, 4) + '</td></tr>';
+    }).join('');
+    el.innerHTML = '<table><thead><tr><th>Greek</th><th>Asked</th><th>Got</th><th>Gap</th></tr></thead><tbody>' + rows +
+      '</tbody></table><p class="muted">' + esc((fit.drivers || []).join(' · ') || 'No move inside the caps.') + '</p>';
+  }
+
   function greekMixTable() {
     const m = greekDiff;
     if (!m || !m.ok) {
@@ -738,8 +781,12 @@
   function render() {
   try {
     read();
-    greekDiff = pinnedState ? F.greekMove(pinnedState, state) : null;
-    const view = F.view(state, history);
+    liveFit = solveDials(state);
+    const pinFit = pinnedState ? solveDials(pinnedState) : null;
+    const liveBook = liveFit ? liveFit.state : state;
+    pinBookState = pinFit ? pinFit.state : pinnedState;
+    greekDiff = pinnedState ? F.greekMove(pinBookState, liveBook) : null;
+    const view = F.view(liveBook, history);
     const fly = selectedFly(view);
     const cls = view.scores.composite ? view.scores.composite.classification : 'insufficient';
     document.getElementById('pills').innerHTML = [
@@ -851,6 +898,11 @@
       showBottom(b);
     };
     paintCharts(view);
+    renderDialFit(liveFit);
+    if (liveFit && liveFit.active) {
+      const note = document.getElementById('chartNote');
+      if (note) note.textContent = 'Greek dials solved the book: ' + liveFit.drivers.join(', ') + '. ' + note.textContent;
+    }
   } catch (err) {
     document.getElementById('chartNote').textContent = 'Calculation error: ' + err.message;
     console.error(err);
