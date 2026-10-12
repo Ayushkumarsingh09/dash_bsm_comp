@@ -3,6 +3,10 @@
   const history = F.getHistory();
   let state = F.linkToFinal(F.defaultState(), history);
   let chartId = 'smile';
+  let pinnedState = null;
+  let drawTarget = 'chart';
+  let chartBadge = '';
+  let paintSerial = 0;
   let timer = null;
   const scenarios = loadScenarios();
 
@@ -335,13 +339,13 @@
 
   function layout(title, yTitle, xTitle) {
     return {
-      title: { text: title, font: { size: 13, color: '#e6edf7' }, x: 0 },
+      title: { text: (chartBadge ? chartBadge + '  ' : '') + title, font: { size: 13, color: '#e6edf7' }, x: 0 },
       paper_bgcolor: '#12161f', plot_bgcolor: '#0b0e14',
       font: { color: '#8b95a8', size: 11 },
       margin: { l: 64, r: 24, t: 36, b: 52 },
       legend: { orientation: 'h', y: 1.02, yanchor: 'bottom', x: 0 },
       hovermode: 'x unified',
-      uirevision: chartId,
+      uirevision: drawTarget + ':' + chartId,
       xaxis: {
         title: xTitle, gridcolor: '#2a3344', zerolinecolor: '#3a4558',
         showspikes: true, spikemode: 'across', spikedash: 'dot', spikecolor: '#8b95a8',
@@ -374,16 +378,20 @@
     return [lo - (pinZero && lo === 0 ? 0 : pad), hi + pad];
   }
   function chartHeight() {
-    const el = document.getElementById('chart');
-    const top = el.getBoundingClientRect().top;
+    const stack = document.getElementById('chartStack') || document.getElementById('chart');
+    const top = stack.getBoundingClientRect().top;
     const note = document.getElementById('chartNote');
     const noteH = note ? note.offsetHeight + 8 : 28;
-    return Math.max(640, Math.round(window.innerHeight - top - noteH - 16));
+    const total = Math.max(640, Math.round(window.innerHeight - top - noteH - 16));
+    if (!pinnedState) return total;
+    return Math.max(280, Math.floor((total - 46) / 2));
   }
   function draw(traces, lay, note, csvRows) {
-    document.getElementById('chartNote').textContent = note || '';
-    window.__csv = csvRows || [];
-    const el = document.getElementById('chart');
+    if (drawTarget === 'chart') {
+      document.getElementById('chartNote').textContent = note || '';
+      window.__csv = csvRows || [];
+    }
+    const el = document.getElementById(drawTarget);
     if (!window.Plotly) {
       el.innerHTML = '<p class="muted">Plotly failed to load. Series are still computed — use Export CSV.</p>';
       return;
@@ -405,7 +413,7 @@
     const h = chartHeight();
     el.style.height = h + 'px';
     lay.height = h;
-    lay.uirevision = chartId;
+    lay.uirevision = pinnedState ? (drawTarget + ':' + chartId + ':' + paintSerial) : chartId;
     Plotly.react(el, traces, lay, {
       responsive: true,
       displaylogo: false,
@@ -417,6 +425,14 @@
     });
   }
   function plotEl() { return document.getElementById('chart'); }
+  function plotEls() {
+    const list = [document.getElementById('chart')].filter(Boolean);
+    if (pinnedState) {
+      const pin = document.getElementById('chartPin');
+      if (pin) list.push(pin);
+    }
+    return list;
+  }
   function currentRanges() {
     const gd = plotEl();
     const fl = gd && gd._fullLayout;
@@ -446,11 +462,11 @@
       upd['yaxis.range'] = scalePair(r.y[0], r.y[1], yFactor);
       upd['yaxis.autorange'] = false;
     }
-    Plotly.relayout(plotEl(), upd);
+    plotEls().forEach((el) => { if (el.data) Plotly.relayout(el, upd); });
   }
   function setDrag(mode) {
     if (!window.Plotly) return;
-    Plotly.relayout(plotEl(), { dragmode: mode });
+    plotEls().forEach((el) => { if (el.data) Plotly.relayout(el, { dragmode: mode }); });
     document.querySelectorAll('[data-drag]').forEach((btn) => btn.classList.toggle('on', btn.getAttribute('data-drag') === mode));
   }
 
@@ -576,6 +592,87 @@
     }
   }
 
+  function axisNumbers(range) {
+    if (!range) return null;
+    const a = typeof range[0] === 'number' ? range[0] : Date.parse(range[0]);
+    const b = typeof range[1] === 'number' ? range[1] : Date.parse(range[1]);
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+    return { lo: Math.min(a, b), hi: Math.max(a, b), dates: typeof range[0] !== 'number' };
+  }
+  function syncCompareScales() {
+    if (!pinnedState || !window.Plotly) return;
+    const live = document.getElementById('chart');
+    const pin = document.getElementById('chartPin');
+    if (!live._fullLayout || !pin._fullLayout) return;
+    const yA = live._fullLayout.yaxis && live._fullLayout.yaxis.range;
+    const yB = pin._fullLayout.yaxis && pin._fullLayout.yaxis.range;
+    if (!yA || !yB || !yA.every(Number.isFinite) || !yB.every(Number.isFinite)) return;
+    const yLo = Math.min(yA[0], yB[0]);
+    const yHi = Math.max(yA[1], yB[1]);
+    const upd = { 'yaxis.range': [yLo, yHi], 'yaxis.autorange': false };
+    const xA = axisNumbers(live._fullLayout.xaxis.range);
+    const xB = axisNumbers(pin._fullLayout.xaxis.range);
+    if (xA && xB && xA.dates === xB.dates) {
+      const lo = Math.min(xA.lo, xB.lo);
+      const hi = Math.max(xA.hi, xB.hi);
+      upd['xaxis.range'] = xA.dates
+        ? [new Date(lo).toISOString().slice(0, 10), new Date(hi).toISOString().slice(0, 10)]
+        : [lo, hi];
+      upd['xaxis.autorange'] = false;
+    }
+    Plotly.relayout(live, upd);
+    Plotly.relayout(pin, upd);
+  }
+  function paintCharts(liveView) {
+    paintSerial += 1;
+    const pinPane = document.getElementById('panePin');
+    const liveLabel = document.getElementById('liveLabel');
+    if (pinPane) pinPane.hidden = !pinnedState;
+    if (liveLabel) liveLabel.hidden = !pinnedState;
+    if (!pinnedState) {
+      chartBadge = '';
+      drawTarget = 'chart';
+      renderChart(liveView);
+    } else {
+      const saved = state;
+      let pinView;
+      try {
+        state = pinnedState;
+        chartBadge = '1 · Pinned';
+        drawTarget = 'chartPin';
+        pinView = F.view(pinnedState, history);
+        renderChart(pinView);
+      } finally {
+        state = saved;
+        chartBadge = '2 · Live';
+        drawTarget = 'chart';
+      }
+      renderChart(liveView);
+      const pinFly = selectedFly(pinView);
+      const liveFly = selectedFly(liveView);
+      const deltaPts = (liveFly - pinFly) * 100;
+      const deltaEl = document.getElementById('liveDelta');
+      if (deltaEl) {
+        deltaEl.textContent = Number.isFinite(deltaPts)
+          ? '· IV fly ' + (deltaPts > 0 ? '+' : '') + deltaPts.toFixed(2) + ' vol pts versus graph 1'
+          : '';
+      }
+      const pinLabel = document.getElementById('pinLabel');
+      if (pinLabel) {
+        pinLabel.innerHTML = '<strong>1 · Pinned</strong> — spot ' + F.fmt(pinnedState.S, 1) +
+          ' · ATM ' + (pinnedState.atm * 100).toFixed(2) + ' pts · fly ' +
+          (Number.isFinite(pinFly) ? (pinFly * 100).toFixed(2) : '—') + ' vol pts. This graph does not move.';
+      }
+      const note = document.getElementById('chartNote');
+      if (note) note.textContent = 'Graph 1 stays at the pinned parameters. Graph 2 follows the controls. Both use the same axis scale. ' + note.textContent;
+      syncCompareScales();
+    }
+    const pinBtn = document.getElementById('pinBtn');
+    const closePin = document.getElementById('closePin');
+    if (pinBtn) pinBtn.textContent = pinnedState ? 'Update graph 1' : 'Pin graph 1';
+    if (closePin) closePin.style.display = pinnedState ? '' : 'none';
+  }
+
   function fmtInf(v) {
     if (v === Infinity) return 'unbounded +';
     if (v === -Infinity) return 'unbounded −';
@@ -687,7 +784,7 @@
       document.querySelectorAll('#bottomTabs button').forEach((btn) => btn.classList.toggle('active', btn === ev.target));
       showBottom(b);
     };
-    renderChart(view);
+    paintCharts(view);
   } catch (err) {
     document.getElementById('chartNote').textContent = 'Calculation error: ' + err.message;
     console.error(err);
@@ -717,6 +814,9 @@
       '<button class="btn sm" type="button" data-drag="pan" title="Drag to pan">Pan</button>' +
       '<span class="sep"></span>' +
       '<button class="btn sm" type="button" id="fitView" title="Fit both axes to the data (0)">Fit</button>' +
+      '<span class="sep"></span>' +
+      '<button class="btn sm primary" type="button" id="pinBtn" title="Freeze this chart, then change parameters on a second chart">Pin graph 1</button>' +
+      '<button class="btn sm" type="button" id="closePin" style="display:none" title="Remove the pinned chart">Remove comparison</button>' +
       '<span class="hint">Scroll zooms · drag a box · double-click resets · + / − / 0</span>';
     document.getElementById('zoomIn').onclick = () => zoomAxes(0.8, 0.8);
     document.getElementById('zoomOut').onclick = () => zoomAxes(1.25, 1.25);
@@ -725,7 +825,19 @@
     document.getElementById('zoomXIn').onclick = () => zoomAxes(0.8, null);
     document.getElementById('zoomXOut').onclick = () => zoomAxes(1.25, null);
     document.getElementById('fitView').onclick = () => {
-      if (window.Plotly) Plotly.relayout(plotEl(), { 'xaxis.autorange': true, 'yaxis.autorange': true });
+      if (!window.Plotly) return;
+      plotEls().forEach((el) => { if (el.data) Plotly.relayout(el, { 'xaxis.autorange': true, 'yaxis.autorange': true }); });
+    };
+    document.getElementById('pinBtn').onclick = () => {
+      read();
+      pinnedState = JSON.parse(JSON.stringify(state));
+      render();
+    };
+    document.getElementById('closePin').onclick = () => {
+      pinnedState = null;
+      const pin = document.getElementById('chartPin');
+      if (window.Plotly && pin && pin.data) Plotly.purge(pin);
+      render();
     };
     document.getElementById('viewTools').addEventListener('click', (ev) => {
       const mode = ev.target.getAttribute && ev.target.getAttribute('data-drag');
@@ -786,8 +898,10 @@
     const el = plotEl();
     if (!window.Plotly || !el || !el.data) return;
     const h = chartHeight();
-    el.style.height = h + 'px';
-    Plotly.relayout(el, { height: h });
+    plotEls().forEach((node) => {
+      node.style.height = h + 'px';
+      if (node.data) Plotly.relayout(node, { height: h });
+    });
   });
   document.addEventListener('keydown', (ev) => {
     const tag = document.activeElement && document.activeElement.tagName;
@@ -796,7 +910,7 @@
     else if (ev.key === '-' || ev.key === '_') { ev.preventDefault(); zoomAxes(1.25, 1.25); }
     else if (ev.key === '0') {
       ev.preventDefault();
-      if (window.Plotly) Plotly.relayout(plotEl(), { 'xaxis.autorange': true, 'yaxis.autorange': true });
+      if (window.Plotly) plotEls().forEach((el) => { if (el.data) Plotly.relayout(el, { 'xaxis.autorange': true, 'yaxis.autorange': true }); });
     }
   });
 })();
