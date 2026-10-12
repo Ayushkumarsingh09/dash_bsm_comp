@@ -338,17 +338,48 @@
       title: { text: title, font: { size: 13, color: '#e6edf7' }, x: 0 },
       paper_bgcolor: '#12161f', plot_bgcolor: '#0b0e14',
       font: { color: '#8b95a8', size: 11 },
-      margin: { l: 58, r: 16, t: 42, b: 48 },
-      legend: { orientation: 'h', y: 1.14 },
+      margin: { l: 64, r: 24, t: 36, b: 52 },
+      legend: { orientation: 'h', y: 1.02, yanchor: 'bottom', x: 0 },
       hovermode: 'x unified',
-      xaxis: { title: xTitle, gridcolor: '#2a3344', zerolinecolor: '#3a4558', showspikes: true, spikemode: 'across', spikedash: 'dot', spikecolor: '#8b95a8' },
-      yaxis: { title: yTitle, gridcolor: '#2a3344', zerolinecolor: '#3a4558', showspikes: true, spikedash: 'dot', spikecolor: '#8b95a8' }
+      uirevision: chartId,
+      xaxis: {
+        title: xTitle, gridcolor: '#2a3344', zerolinecolor: '#3a4558',
+        showspikes: true, spikemode: 'across', spikedash: 'dot', spikecolor: '#8b95a8',
+        automargin: true
+      },
+      yaxis: {
+        title: yTitle, gridcolor: '#2a3344', zerolinecolor: '#3a4558',
+        showspikes: true, spikedash: 'dot', spikecolor: '#8b95a8',
+        automargin: true, rangemode: 'normal'
+      }
     };
   }
   function line(name, x, y, color, dash) {
     return { type: 'scatter', mode: 'lines', name, x, y, line: { color, width: 2, dash: dash || 'solid' }, hovertemplate: '%{x:.4g}<br>%{y:.4g}<extra>' + name + '</extra>' };
   }
 
+  function finiteValues(arr) {
+    const out = [];
+    if (!arr) return out;
+    for (let i = 0; i < arr.length; i++) if (typeof arr[i] === 'number' && Number.isFinite(arr[i])) out.push(arr[i]);
+    return out;
+  }
+  function paddedRange(vals, padFrac, pinZero) {
+    if (!vals.length) return null;
+    let lo = Math.min.apply(null, vals);
+    let hi = Math.max.apply(null, vals);
+    if (pinZero) lo = Math.min(0, lo);
+    if (lo === hi) { lo -= Math.abs(lo) * 0.05 || 1; hi += Math.abs(hi) * 0.05 || 1; }
+    const pad = (hi - lo) * padFrac;
+    return [lo - (pinZero && lo === 0 ? 0 : pad), hi + pad];
+  }
+  function chartHeight() {
+    const el = document.getElementById('chart');
+    const top = el.getBoundingClientRect().top;
+    const note = document.getElementById('chartNote');
+    const noteH = note ? note.offsetHeight + 8 : 28;
+    return Math.max(640, Math.round(window.innerHeight - top - noteH - 16));
+  }
   function draw(traces, lay, note, csvRows) {
     document.getElementById('chartNote').textContent = note || '';
     window.__csv = csvRows || [];
@@ -357,7 +388,70 @@
       el.innerHTML = '<p class="muted">Plotly failed to load. Series are still computed — use Export CSV.</p>';
       return;
     }
-    Plotly.react(el, traces, lay, { responsive: true, displaylogo: false, scrollZoom: true });
+    const ys = [];
+    const bars = traces.some((t) => t.type === 'bar');
+    const heat = traces.some((t) => t.type === 'heatmap');
+    if (!heat) {
+      for (const t of traces) {
+        if (t.yaxis === 'y2') continue;
+        finiteValues(t.y).forEach((v) => ys.push(v));
+      }
+      const yRange = paddedRange(ys, 0.06, bars);
+      if (yRange) {
+        lay.yaxis.range = yRange;
+        lay.yaxis.autorange = false;
+      }
+    }
+    const h = chartHeight();
+    el.style.height = h + 'px';
+    lay.height = h;
+    lay.uirevision = chartId;
+    Plotly.react(el, traces, lay, {
+      responsive: true,
+      displaylogo: false,
+      scrollZoom: true,
+      doubleClick: 'reset',
+      displayModeBar: true,
+      modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+      toImageButtonOptions: { format: 'png', filename: 'spx-fly', scale: 2 }
+    });
+  }
+  function plotEl() { return document.getElementById('chart'); }
+  function currentRanges() {
+    const gd = plotEl();
+    const fl = gd && gd._fullLayout;
+    if (!fl || !fl.xaxis || !fl.yaxis) return null;
+    return { x: fl.xaxis.range.slice(), y: fl.yaxis.range.slice() };
+  }
+  function scalePair(a, b, factor) {
+    const na = typeof a === 'number' ? a : Date.parse(a);
+    const nb = typeof b === 'number' ? b : Date.parse(b);
+    if (!Number.isFinite(na) || !Number.isFinite(nb)) return [a, b];
+    const mid = (na + nb) / 2;
+    const half = Math.abs(nb - na) * factor / 2;
+    const lo = mid - half;
+    const hi = mid + half;
+    if (typeof a === 'number' && typeof b === 'number') return [lo, hi];
+    return [new Date(lo).toISOString().slice(0, 10), new Date(hi).toISOString().slice(0, 10)];
+  }
+  function zoomAxes(xFactor, yFactor) {
+    const r = currentRanges();
+    if (!r || !window.Plotly) return;
+    const upd = {};
+    if (xFactor) {
+      upd['xaxis.range'] = scalePair(r.x[0], r.x[1], xFactor);
+      upd['xaxis.autorange'] = false;
+    }
+    if (yFactor) {
+      upd['yaxis.range'] = scalePair(r.y[0], r.y[1], yFactor);
+      upd['yaxis.autorange'] = false;
+    }
+    Plotly.relayout(plotEl(), upd);
+  }
+  function setDrag(mode) {
+    if (!window.Plotly) return;
+    Plotly.relayout(plotEl(), { dragmode: mode });
+    document.querySelectorAll('[data-drag]').forEach((btn) => btn.classList.toggle('on', btn.getAttribute('data-drag') === mode));
   }
 
   function selectedFly(view) {
@@ -611,6 +705,32 @@
       document.querySelectorAll('#chartTabs button').forEach((b) => b.classList.toggle('active', b.getAttribute('data-c') === id));
       schedule();
     };
+    document.getElementById('viewTools').innerHTML =
+      '<button class="btn sm" type="button" id="zoomIn" title="Zoom in (+)">Zoom in</button>' +
+      '<button class="btn sm" type="button" id="zoomOut" title="Zoom out (-)">Zoom out</button>' +
+      '<button class="btn sm" type="button" id="zoomYIn" title="Taller y scale">Y+</button>' +
+      '<button class="btn sm" type="button" id="zoomYOut" title="Shorter y scale">Y−</button>' +
+      '<button class="btn sm" type="button" id="zoomXIn" title="Zoom x in">X+</button>' +
+      '<button class="btn sm" type="button" id="zoomXOut" title="Zoom x out">X−</button>' +
+      '<span class="sep"></span>' +
+      '<button class="btn sm on" type="button" data-drag="zoom" title="Drag a box to zoom">Box zoom</button>' +
+      '<button class="btn sm" type="button" data-drag="pan" title="Drag to pan">Pan</button>' +
+      '<span class="sep"></span>' +
+      '<button class="btn sm" type="button" id="fitView" title="Fit both axes to the data (0)">Fit</button>' +
+      '<span class="hint">Scroll zooms · drag a box · double-click resets · + / − / 0</span>';
+    document.getElementById('zoomIn').onclick = () => zoomAxes(0.8, 0.8);
+    document.getElementById('zoomOut').onclick = () => zoomAxes(1.25, 1.25);
+    document.getElementById('zoomYIn').onclick = () => zoomAxes(null, 0.72);
+    document.getElementById('zoomYOut').onclick = () => zoomAxes(null, 1.4);
+    document.getElementById('zoomXIn').onclick = () => zoomAxes(0.8, null);
+    document.getElementById('zoomXOut').onclick = () => zoomAxes(1.25, null);
+    document.getElementById('fitView').onclick = () => {
+      if (window.Plotly) Plotly.relayout(plotEl(), { 'xaxis.autorange': true, 'yaxis.autorange': true });
+    };
+    document.getElementById('viewTools').addEventListener('click', (ev) => {
+      const mode = ev.target.getAttribute && ev.target.getAttribute('data-drag');
+      if (mode) setDrag(mode);
+    });
     document.getElementById('chartTools').innerHTML =
       '<label class="muted">Greek <select id="greekName"><option>delta</option><option>gamma</option><option>vega</option><option>theta</option><option>rho</option><option>vanna</option><option>vomma</option><option>charm</option><option>color</option><option>speed</option></select></label>' +
       '<button class="btn sm" id="csvBtn" type="button">Export CSV</button>' +
@@ -662,4 +782,21 @@
   buildChartChrome();
   write();
   render();
+  window.addEventListener('resize', () => {
+    const el = plotEl();
+    if (!window.Plotly || !el || !el.data) return;
+    const h = chartHeight();
+    el.style.height = h + 'px';
+    Plotly.relayout(el, { height: h });
+  });
+  document.addEventListener('keydown', (ev) => {
+    const tag = document.activeElement && document.activeElement.tagName;
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+    if (ev.key === '+' || ev.key === '=') { ev.preventDefault(); zoomAxes(0.8, 0.8); }
+    else if (ev.key === '-' || ev.key === '_') { ev.preventDefault(); zoomAxes(1.25, 1.25); }
+    else if (ev.key === '0') {
+      ev.preventDefault();
+      if (window.Plotly) Plotly.relayout(plotEl(), { 'xaxis.autorange': true, 'yaxis.autorange': true });
+    }
+  });
 })();

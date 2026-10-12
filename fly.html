@@ -40,13 +40,14 @@ button, input, select, textarea { font: inherit; color: inherit; }
   margin: 8px 14px 0; padding: 8px 10px; border: 1px solid #9a3412; background: #431407;
   color: #ffedd5; border-radius: var(--radius); font-size: 12px;
 }
-.layout { display: grid; grid-template-columns: 300px minmax(0, 1fr) 300px; gap: 10px; padding: 10px 14px 20px; }
+.layout { display: grid; grid-template-columns: 300px minmax(0, 1fr) 300px; gap: 10px; padding: 10px 14px 12px; align-items: stretch; }
 @media (max-width: 1180px) { .layout { grid-template-columns: 1fr; } }
 .card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; }
 .card h2, .side h3 {
   font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin: 8px 0;
 }
-.side { max-height: calc(100vh - 120px); overflow: auto; padding-right: 4px; }
+.side { max-height: calc(100vh - 118px); overflow: auto; padding-right: 4px; }
+main.stage { display: flex; flex-direction: column; min-height: calc(100vh - 118px); }
 .field { display: flex; flex-direction: column; gap: 2px; margin-bottom: 6px; }
 .field label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .field .pair { display: flex; gap: 6px; }
@@ -64,7 +65,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .btn.sm { padding: 3px 7px; font-size: 11px; }
 .btn.primary { background: #1e3a5f; border-color: var(--accent); }
 .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.chart { min-height: 460px; }
+.viewbar { margin: 2px 0 6px; }
+.viewbar .sep { width: 1px; height: 18px; background: var(--border2); margin: 0 2px; }
+.viewbar .hint { margin-left: auto; font-size: 11px; color: var(--muted); }
+.btn.on { background: #134e4a; border-color: var(--accent2); color: #ccfbf1; }
+.chart { flex: 1 1 auto; min-height: 640px; width: 100%; }
 .muted { color: var(--muted); }
 .mono { font-family: var(--mono); }
 table { width: 100%; border-collapse: collapse; font-size: 11px; font-family: var(--mono); }
@@ -97,9 +102,10 @@ summary { cursor: pointer; color: var(--accent2); }
 <div class="banner" id="banner">SYNTHETIC DEMONSTRATION — not live SPX. A historically cheap fly is not a buy, not a forecast, and not executable edge after spread, fees, and model error.</div>
 <div class="layout">
   <aside class="card side" id="controls"></aside>
-  <main class="card">
+  <main class="card stage">
     <div class="tabs" id="chartTabs"></div>
-    <div class="row" id="chartTools" style="margin-bottom:8px;"></div>
+    <div class="row" id="chartTools" style="margin-bottom:4px;"></div>
+    <div class="row viewbar" id="viewTools"></div>
     <div id="chart" class="chart"></div>
     <p class="muted" id="chartNote" style="margin-top:6px;"></p>
   </main>
