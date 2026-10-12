@@ -69,12 +69,9 @@ main.stage { display: flex; flex-direction: column; min-height: calc(100vh - 118
 .viewbar .sep { width: 1px; height: 18px; background: var(--border2); margin: 0 2px; }
 .viewbar .hint { margin-left: auto; font-size: 11px; color: var(--muted); }
 .btn.on { background: #134e4a; border-color: var(--accent2); color: #ccfbf1; }
-.chart-stack { display: flex; flex-direction: column; gap: 6px; flex: 1; min-height: 0; }
-.pane-label { font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
-.pane-label strong { color: var(--text); font-weight: 650; }
-.pane-label .delta { color: var(--accent2); font-family: var(--mono); letter-spacing: 0; text-transform: none; }
-.chart { flex: 1 1 auto; min-height: 280px; width: 100%; }
-#panePin[hidden], #liveLabel[hidden] { display: none; }
+.chart-stack { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.chart { flex: 1 1 auto; min-height: 640px; width: 100%; }
+.pin-delta { font-family: var(--mono); font-size: 11px; color: var(--accent2); letter-spacing: 0; }
 .muted { color: var(--muted); }
 .mono { font-family: var(--mono); }
 table { width: 100%; border-collapse: collapse; font-size: 11px; font-family: var(--mono); }
@@ -112,14 +109,7 @@ summary { cursor: pointer; color: var(--accent2); }
     <div class="row" id="chartTools" style="margin-bottom:4px;"></div>
     <div class="row viewbar" id="viewTools"></div>
     <div id="chartStack" class="chart-stack">
-      <div id="panePin" hidden>
-        <div class="pane-label" id="pinLabel"><strong>1 · Pinned</strong> — fixed while you move the controls</div>
-        <div id="chartPin" class="chart"></div>
-      </div>
-      <div id="paneLive">
-        <div class="pane-label" id="liveLabel" hidden><strong>2 · Live</strong> <span class="delta" id="liveDelta"></span></div>
-        <div id="chart" class="chart"></div>
-      </div>
+      <div id="chart" class="chart"></div>
     </div>
     <p class="muted" id="chartNote" style="margin-top:6px;"></p>
   </main>
