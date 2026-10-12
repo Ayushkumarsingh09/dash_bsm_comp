@@ -406,7 +406,9 @@
     const top = stack.getBoundingClientRect().top;
     const note = document.getElementById('chartNote');
     const noteH = note ? note.offsetHeight + 8 : 28;
-    return Math.max(640, Math.round(window.innerHeight - top - noteH - 16));
+    const fly = document.getElementById('flyPanel');
+    const flyH = fly ? 280 : 0;
+    return Math.max(320, Math.round(window.innerHeight - top - noteH - flyH - 20));
   }
   function draw(traces, lay, note, csvRows) {
     if (capture) {
@@ -772,6 +774,73 @@
       '</tbody></table></div>';
   }
 
+  function flyChip(label, value, change) {
+    return '<span class="pill">' + label + ' <strong>' + value + '</strong>' +
+      (change ? ' <span class="chg">' + change + '</span>' : '') + '</span>';
+  }
+  function signedPts(v) {
+    if (!Number.isFinite(v)) return '—';
+    return (v > 0 ? '+' : '') + v.toFixed(2) + ' pts';
+  }
+  function drawFlyPanel(view, liveState, baseState, pinState) {
+    const host = document.getElementById('flyValues');
+    const el = document.getElementById('flyChart');
+    if (!host || !el) return;
+    const q = view.quotes || {};
+    const price = view.priceFly && Number.isFinite(view.priceFly.normalized) ? view.priceFly.normalized : NaN;
+    const vol = (v) => Number.isFinite(v) ? (v * 100).toFixed(2) + ' pts' : '—';
+    const chips = [
+      flyChip('Raw', vol(q.raw)),
+      flyChip('25Δ', vol(q.d25)),
+      flyChip('10Δ', vol(q.d10)),
+      flyChip('ATM', vol(q.atm)),
+      flyChip('Fwd Δ', vol(q.dn)),
+      flyChip('Price', Number.isFinite(price) ? F.fmt(price, 2) + ' pts' : '—')
+    ];
+    const liveRows = F.flyCurve(liveState);
+    const traces = [line('Live IV fly', liveRows.map((r) => r.K), liveRows.map((r) => r.fly * 100), '#e6edf7')];
+    function rawOf(s) {
+      return F.ivFlyOf(F.resolveWings(F.materialize(s)));
+    }
+    if (baseState) {
+      const d = (q.raw - rawOf(baseState)) * 100;
+      chips.push(flyChip('vs dials off', signedPts(d)));
+      const rows = F.flyCurve(baseState);
+      traces.push(line('Before dials', rows.map((r) => r.K), rows.map((r) => r.fly * 100), '#8b95a8', 'dash'));
+    }
+    if (pinState) {
+      const d = (q.raw - rawOf(pinState)) * 100;
+      chips.push(flyChip('vs pin', signedPts(d)));
+      const rows = F.flyCurve(pinState);
+      traces.push(line('Pinned', rows.map((r) => r.K), rows.map((r) => r.fly * 100), '#f59e0b', 'dash'));
+    }
+    if (view.wings && Number.isFinite(view.wings.Kc) && Number.isFinite(q.raw)) {
+      traces.push({
+        type: 'scatter', mode: 'markers', name: 'This center',
+        x: [view.wings.Kc], y: [q.raw * 100],
+        marker: { size: 11, color: '#2dd4bf' }
+      });
+    }
+    host.innerHTML = chips.join('');
+    if (!window.Plotly) {
+      el.innerHTML = '<p class="muted">Plotly failed to load.</p>';
+      return;
+    }
+    const lay = layout('IV fly vs center strike', 'IV fly (vol points)', 'Center strike');
+    lay.height = 240;
+    lay.margin = { l: 56, r: 12, t: 28, b: 40 };
+    lay.title.font.size = 12;
+    lay.uirevision = 'fly-strip';
+    const ys = [];
+    traces.forEach((t) => finiteValues(t.y).forEach((v) => ys.push(v)));
+    const yRange = paddedRange(ys, 0.1, false);
+    if (yRange) {
+      lay.yaxis.range = yRange;
+      lay.yaxis.autorange = false;
+    }
+    Plotly.react(el, traces, lay, { responsive: true, displaylogo: false, displayModeBar: false, scrollZoom: true });
+  }
+
   function fmtInf(v) {
     if (v === Infinity) return 'unbounded +';
     if (v === -Infinity) return 'unbounded −';
@@ -899,6 +968,7 @@
     };
     paintCharts(view);
     renderDialFit(liveFit);
+    drawFlyPanel(view, liveBook, liveFit ? state : null, pinnedState ? pinBookState : null);
     if (liveFit && liveFit.active) {
       const note = document.getElementById('chartNote');
       if (note) note.textContent = 'Greek dials solved the book: ' + liveFit.drivers.join(', ') + '. ' + note.textContent;

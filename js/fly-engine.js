@@ -1851,6 +1851,23 @@
     }).filter((p) => isNum(p.delta) && isNum(p.iv));
   }
 
+  function flyCurve(state) {
+    const s0 = materialize(state);
+    const fwd = forward(s0);
+    const centers = linspace(fwd * 0.88, fwd * 1.10, 42);
+    const rows = [];
+    for (let i = 0; i < centers.length; i++) {
+      const s = withPatches(s0, { centerMode: 'strike', centerK: centers[i] });
+      if (s0._pin) s._pin = s0._pin;
+      if (s0.quoteGrid) s.quoteGrid = s0.quoteGrid;
+      const w = resolveWings(s);
+      if (!w.ordered || !isNum(ivFlyOf(w))) continue;
+      const px = priceFly(s, w);
+      rows.push({ K: centers[i], fly: ivFlyOf(w), price: px.normalized });
+    }
+    return rows;
+  }
+
   function flySweepStrike(state, history) {
     const h = history || getHistory();
     const s0 = materialize(state);
@@ -2570,7 +2587,7 @@
     unitLegs, packagePoints, payoff, payoffLimits, breakevens, extrema, greeksOf,
     fitSVI, fitSSVI, varianceInterp, getHistory, resetHistory, linkToFinal, stateFromDay,
     assess, decompose, attributeScenario, arbitrageReport, metricOn,
-    smileSeries, deltaSmile, flySweepStrike, flySweepDelta, flySweepWidth, priceFlySweep,
+    smileSeries, deltaSmile, flyCurve, flySweepStrike, flySweepDelta, flySweepWidth, priceFlySweep,
     payoffSeries, greekSeries, greekMove, GREEK_DIALS, zeroGreekDials, solveGreekDials,
     heatmap, historyChart, presets, chainCSV, parseCSV, applyImport,
     quickCheck, view, fmt, businessDaysEnding, isBiz, kGrid
