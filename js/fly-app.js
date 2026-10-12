@@ -4,6 +4,7 @@
   let state = F.linkToFinal(F.defaultState(), history);
   let chartId = 'smile';
   let pinnedState = null;
+  let greekDiff = null;
   let paintSerial = 0;
   let capture = null;
   let timer = null;
@@ -18,6 +19,7 @@
     ['price', '6 Price fly'],
     ['payoff', '7 Payoff / P&L'],
     ['greeks', '8 Greeks'],
+    ['gmix', 'Greek mix'],
     ['heat', '9 Heatmap'],
     ['hist', '10 History'],
     ['attr', 'Attribution']
@@ -564,6 +566,34 @@
       ], layout(which + ' vs spot, strikes held at the scenario wings', which, 'Spot'),
         'Analytical BSM Greeks hold each leg’s IV fixed. Smile delta in the table is the finite difference when IV is allowed to move with the sticky rule. Vega is per 1.00 vol; divide by 100 for one vol point. Theta is per year.',
         g.vsSpot.map((r) => [r.S, r.sum[which]]));
+    } else if (chartId === 'gmix') {
+      if (!greekDiff || !greekDiff.ok) {
+        draw([], layout('Package price change through the Greek combination', 'Index points', 'Greek'),
+          'Pin overlay, then move spot, volatility, time, or rates. This chart splits that package price change across every Greek, including the cross terms vanna (spot × vol), charm (spot × time), and color (spot² × time).',
+          []);
+      } else {
+        const m = greekDiff;
+        const labels = m.terms.map((t) => t.key);
+        const values = m.terms.map((t) => t.value);
+        const hover = m.terms.map((t) => t.combo + ' · ' + t.formula);
+        labels.push('residual');
+        values.push(m.residual);
+        hover.push('actual minus the Greek sum, same strikes');
+        if (Math.abs(m.structure) > 1e-4) {
+          labels.push('new strikes');
+          values.push(m.structure);
+          hover.push('live wings minus the pinned strikes');
+        }
+        draw([{
+          type: 'bar', name: 'Price change', x: labels, y: values,
+          marker: { color: values.map((v) => v >= 0 ? '#22c55e' : '#ef4444') },
+          customdata: hover,
+          hovertemplate: '%{x}<br>%{customdata}<br>%{y:.4f} pts<extra></extra>'
+        }], layout('Package price change through the Greek combination', 'Index points', 'Greek'),
+          m.note + ' Explained ' + F.fmt(m.explained, 3) + ' pts. Same-strike actual ' + F.fmt(m.actualSameStrikes, 3) +
+            ' pts. Residual ' + F.fmt(m.residual, 3) + ' pts.',
+          labels.map((name, i) => [name, values[i], hover[i]]));
+      }
     } else if (chartId === 'heat') {
       const hmap = F.heatmap(state, state.heatmap.x, state.heatmap.y, state.heatmap.metric, 13);
       draw([{
@@ -626,6 +656,17 @@
       setPinChrome('');
       return;
     }
+    if (chartId === 'gmix') {
+      renderChart(liveView);
+      const pinOnly = F.view(pinnedState, history);
+      const pinFly = selectedFly(pinOnly);
+      const liveFly = selectedFly(liveView);
+      const deltaPts = (liveFly - pinFly) * 100;
+      setPinChrome(Number.isFinite(deltaPts)
+        ? 'IV fly ' + (deltaPts > 0 ? '+' : '') + deltaPts.toFixed(2) + ' vol pts vs pin'
+        : '');
+      return;
+    }
     const saved = state;
     let pinView;
     let pinCap;
@@ -666,6 +707,28 @@
     if (deltaEl) deltaEl.textContent = delta || '';
   }
 
+  function greekMixTable() {
+    const m = greekDiff;
+    if (!m || !m.ok) {
+      return '<p class="muted">Pin overlay, then change parameters. Each row is one Greek. Columns are the wings and the package. Vanna, charm, and color are the cross terms. Values are index points for one package.</p>';
+    }
+    const legs = m.legs;
+    const head = legs.map((leg) => esc(leg.type) + ' ' + leg.K.toFixed(0)).join('</th><th>');
+    const bodyRows = m.terms.map((t) => {
+      const cells = legs.map((leg) => '<td>' + F.fmt(leg.terms[t.key], 4) + '</td>').join('');
+      return '<tr><td>' + esc(t.key) + '</td><td>' + esc(t.combo) + '</td>' + cells + '<td>' + F.fmt(t.value, 4) + '</td></tr>';
+    }).join('');
+    const actualCells = legs.map((leg) => '<td>' + F.fmt(leg.actual, 4) + '</td>').join('');
+    return '<p class="muted">' + esc(m.note) + '</p>' +
+      '<p class="mono">dS ' + F.fmt(m.dS, 2) + ' · dT ' + F.fmt(m.dT, 5) + ' · dr ' + F.fmt(m.dr, 5) + ' · dq ' + F.fmt(m.dq, 5) +
+      ' · same-strike ' + F.fmt(m.actualSameStrikes, 4) + ' · explained ' + F.fmt(m.explained, 4) +
+      ' · residual ' + F.fmt(m.residual, 4) + ' · new strikes ' + F.fmt(m.structure, 4) + '</p>' +
+      '<div class="scroll"><table><thead><tr><th>Greek</th><th>Combination</th><th>' + head + '</th><th>Package</th></tr></thead><tbody>' +
+      bodyRows +
+      '<tr><td>actual</td><td>repriced</td>' + actualCells + '<td>' + F.fmt(m.actualSameStrikes, 4) + '</td></tr>' +
+      '</tbody></table></div>';
+  }
+
   function fmtInf(v) {
     if (v === Infinity) return 'unbounded +';
     if (v === -Infinity) return 'unbounded −';
@@ -675,6 +738,7 @@
   function render() {
   try {
     read();
+    greekDiff = pinnedState ? F.greekMove(pinnedState, state) : null;
     const view = F.view(state, history);
     const fly = selectedFly(view);
     const cls = view.scores.composite ? view.scores.composite.classification : 'insufficient';
@@ -717,6 +781,13 @@
       rail.push('<p class="mono">Vega/pt ' + F.fmt(g.vegaPerPoint, 3) + ' · Θ/day ' + F.fmt(g.thetaPerDay, 3) + '</p>');
       rail.push('<p class="muted">FD − analytic Δ = ' + F.fmt(g.fdGap, 6) + '. ' + esc(g.units.vega) + '</p>');
     }
+    if (greekDiff && greekDiff.ok) {
+      const top = greekDiff.terms.slice().sort((a, b) => Math.abs(b.value) - Math.abs(a.value))[0];
+      rail.push('<h3>Greek mix vs pin</h3>');
+      rail.push('<p class="mono">Same-strike ' + F.fmt(greekDiff.actualSameStrikes, 3) + ' pts</p>');
+      rail.push('<p class="mono">Largest ' + esc(top.key) + ' ' + F.fmt(top.value, 3) + ' · ' + esc(top.combo) + '</p>');
+      rail.push('<p class="muted">Explained ' + F.fmt(greekDiff.explained, 3) + ' · residual ' + F.fmt(greekDiff.residual, 3) + '. The Greek mix chart has every term.</p>');
+    }
     view.wings.notes.forEach((n) => rail.push('<p class="warn-line">' + esc(n) + '</p>'));
     if (!view.arbitrage.ok) view.arbitrage.issues.forEach((n) => rail.push('<p class="warn-line">' + esc(n) + '</p>'));
     else rail.push('<p class="muted">No butterfly or calendar failure on the checked grid. SVI RMSE ' + (view.arbitrage.svi.rmseVolPts != null ? view.arbitrage.svi.rmseVolPts.toFixed(2) : '—') + ' vol pts.</p>');
@@ -733,7 +804,7 @@
     const legRows = (view.position && view.position.legs) ? view.position.legs : [];
     document.getElementById('bottom').innerHTML =
       '<div class="tabs" id="bottomTabs">' +
-      '<button class="active" data-b="methods">15 scores</button><button data-b="legs">Legs</button><button data-b="attr">Interactions</button><button data-b="scen">Saved scenarios</button><button data-b="method">Methodology</button>' +
+      '<button class="active" data-b="methods">15 scores</button><button data-b="legs">Legs</button><button data-b="gmix">Greek mix</button><button data-b="attr">Interactions</button><button data-b="scen">Saved scenarios</button><button data-b="method">Methodology</button>' +
       '</div><div id="bottomBody"></div>';
     const body = document.getElementById('bottomBody');
     function showBottom(which) {
@@ -741,6 +812,8 @@
         body.innerHTML = '<div class="scroll"><table><thead><tr><th>Type</th><th>Strike</th><th>Qty</th><th>IV</th><th>Mid</th><th>Delta</th><th>Vega / pt</th></tr></thead><tbody>' +
           (view.greeks ? view.greeks.perLeg.map((r) => '<tr><td>' + r.type + '</td><td>' + r.K.toFixed(2) + '</td><td>' + F.fmt(r.qty, 3) + '</td><td>' + (r.iv * 100).toFixed(2) + '</td><td>' + F.fmt(r.price, 2) + '</td><td>' + F.fmt(r.delta, 3) + '</td><td>' + F.fmt(r.vega / 100, 3) + '</td></tr>').join('') : '') +
           '</tbody></table></div>';
+      } else if (which === 'gmix') {
+        body.innerHTML = greekMixTable();
       } else if (which === 'attr') {
         const pairs = view.attribution.pairs;
         body.innerHTML = '<p class="muted">Interaction(A,B) = f(A,B) − f(A) − f(B) + f(0), with 0 the unshocked baseline.</p><div class="scroll"><table><thead><tr><th>A</th><th>B</th><th>Interaction</th></tr></thead><tbody>' +

@@ -2037,6 +2037,98 @@
     return { now: g, vsSpot, vsStrike, legs };
   }
 
+  const GREEK_TERMS = [
+    ['delta', 'spot', 'Δ · dS'],
+    ['gamma', 'spot²', '½ Γ · dS²'],
+    ['speed', 'spot³', '⅙ speed · dS³'],
+    ['vega', 'vol', 'vega · dσ'],
+    ['vomma', 'vol²', '½ vomma · dσ²'],
+    ['vanna', 'spot × vol', 'vanna · dS · dσ'],
+    ['theta', 'time', '−θ · dT'],
+    ['charm', 'spot × time', '−charm · dS · dT'],
+    ['color', 'spot² × time', '−½ color · dS² · dT'],
+    ['rho', 'rate', 'ρ · dr']
+  ];
+
+  function greekMove(fromState, toState) {
+    const from = materialize(fromState);
+    const to = materialize(toState);
+    const wings = resolveWings(from);
+    if (!wings.ordered) return { ok: false, reason: 'Starting wings are not ordered.' };
+    const legs = unitLegs(from, wings);
+    const toWings = resolveWings(to);
+    const toLegs = toWings.ordered ? unitLegs(to, toWings) : [];
+    const dS = to.S - from.S;
+    const dT = to.T - from.T;
+    const dr = to.r - from.r;
+    const dq = to.q - from.q;
+    const names = GREEK_TERMS.map((t) => t[0]);
+    const pack = {};
+    for (const n of names) pack[n] = 0;
+    const legRows = [];
+    let pinPx = 0;
+    let samePx = 0;
+    for (const leg of legs) {
+      const iv0 = ivAt(from, leg.K).iv;
+      const iv1 = ivAt(to, leg.K).iv;
+      const dIV = iv1 - iv0;
+      const g = bsm(from, leg.K, leg.type, iv0);
+      const px0 = leg.qty * g.price;
+      const px1 = leg.qty * bsm(to, leg.K, leg.type, iv1).price;
+      pinPx += px0;
+      samePx += px1;
+      const q = leg.qty;
+      const terms = {
+        delta: q * g.delta * dS,
+        gamma: q * 0.5 * g.gamma * dS * dS,
+        speed: q * (1 / 6) * g.speed * dS * dS * dS,
+        vega: q * g.vega * dIV,
+        vomma: q * 0.5 * g.vomma * dIV * dIV,
+        vanna: q * g.vanna * dS * dIV,
+        theta: q * (-g.theta) * dT,
+        charm: q * (-g.charm) * dS * dT,
+        color: q * (-0.5 * g.color) * dS * dS * dT,
+        rho: q * g.rho * dr
+      };
+      let explained = 0;
+      for (const n of names) {
+        explained += terms[n];
+        pack[n] += terms[n];
+      }
+      legRows.push({
+        type: leg.type, K: leg.K, qty: leg.qty, iv0, iv1, dIV,
+        price0: px0, price1: px1, actual: px1 - px0, explained, terms
+      });
+    }
+    let explained = 0;
+    for (const n of names) explained += pack[n];
+    const actualSameStrikes = samePx - pinPx;
+    let livePackage = NaN;
+    let structure = 0;
+    if (toLegs.length) {
+      livePackage = 0;
+      for (const leg of toLegs) {
+        const iv = ivAt(to, leg.K).iv;
+        livePackage += leg.qty * bsm(to, leg.K, leg.type, iv).price;
+      }
+      structure = livePackage - samePx;
+    }
+    return {
+      ok: true,
+      dS, dT, dr, dq,
+      terms: GREEK_TERMS.map((row) => ({ key: row[0], combo: row[1], formula: row[2], value: pack[row[0]] })),
+      legs: legRows,
+      explained,
+      actualSameStrikes,
+      residual: actualSameStrikes - explained,
+      pinPackage: pinPx,
+      sameStrikePackage: samePx,
+      livePackage,
+      structure,
+      note: 'Taylor expansion at the pinned smile. Strikes and quantities stay at the pin. Theta is calendar decay, so a longer maturity is −θ·dT. Vanna, charm, and color are the cross terms. Residual is what this order does not explain. The new-strike gap is the package after the wings move, and it is not a Greek.'
+    };
+  }
+
   function heatmap(state, xKey, yKey, metric, n) {
     const s0 = materialize(state, zeroShocks());
     s0.quoteGrid = null;
@@ -2317,7 +2409,7 @@
     fitSVI, fitSSVI, varianceInterp, getHistory, resetHistory, linkToFinal, stateFromDay,
     assess, decompose, attributeScenario, arbitrageReport, metricOn,
     smileSeries, deltaSmile, flySweepStrike, flySweepDelta, flySweepWidth, priceFlySweep,
-    payoffSeries, greekSeries, heatmap, historyChart, presets, chainCSV, parseCSV, applyImport,
+    payoffSeries, greekSeries, greekMove, heatmap, historyChart, presets, chainCSV, parseCSV, applyImport,
     quickCheck, view, fmt, businessDaysEnding, isBiz, kGrid
   };
   global.FLY = api;

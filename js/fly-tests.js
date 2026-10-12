@@ -156,6 +156,42 @@
       near(pack, sum, 1e-8);
     });
 
+    test('a spot move is carried by delta, gamma, and speed', () => {
+      const from = F.defaultState();
+      from.quoteGrid = null;
+      from.linkedToFinal = false;
+      from.atm = 0.2;
+      from.putSkew = 0;
+      from.callSkew = 0;
+      from.curvature = 0;
+      from.asymmetry = 0;
+      from.wingSteepness = 0;
+      from.bump = 0;
+      from.shocks = F.zeroShocks();
+      const to = JSON.parse(JSON.stringify(from));
+      to.S = from.S + 25;
+      const m = F.greekMove(from, to);
+      assert(m.ok, 'ordered');
+      const spot = m.terms.filter((t) => t.key === 'delta' || t.key === 'gamma' || t.key === 'speed')
+        .reduce((s, t) => s + t.value, 0);
+      near(spot, m.actualSameStrikes, Math.max(1e-3, Math.abs(m.actualSameStrikes) * 0.02));
+      near(m.explained, m.actualSameStrikes, Math.max(1e-3, Math.abs(m.actualSameStrikes) * 0.02));
+    });
+
+    test('a vol move is carried by vega, vomma, and vanna', () => {
+      const from = F.defaultState();
+      from.quoteGrid = null;
+      from.linkedToFinal = false;
+      from.shocks = F.zeroShocks();
+      const to = JSON.parse(JSON.stringify(from));
+      to.atm = from.atm + 0.01;
+      const m = F.greekMove(from, to);
+      assert(m.ok, 'ordered');
+      const vol = m.terms.filter((t) => t.key === 'vega' || t.key === 'vomma' || t.key === 'vanna')
+        .reduce((s, t) => s + t.value, 0);
+      near(vol, m.actualSameStrikes, Math.max(1e-2, Math.abs(m.actualSameStrikes) * 0.08));
+    });
+
     test('frozen-IV finite-difference delta matches analytic delta', () => {
       const s = F.defaultState();
       s.quoteGrid = null;
