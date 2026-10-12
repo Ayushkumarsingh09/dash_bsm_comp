@@ -211,6 +211,20 @@
       assert(Math.abs(fit.achieved.vega) > 0.4, 'vega ' + fit.achieved.vega);
     });
 
+    test('25Δ and 10Δ broker marks put the butterfly on the smile chord', () => {
+      const s = F.defaultState();
+      s.quoteGrid = null;
+      s.linkedToFinal = false;
+      const marks = F.brokerMarks(s);
+      assert(marks.length === 2, 'two quotes');
+      for (const m of marks) {
+        assert(m.Kl < m.Kc && m.Kc < m.Ku, 'strike order');
+        near(m.bf, 0.5 * (m.ivL + m.ivU) - m.ivC, 1e-12);
+        near(m.rr, m.ivU - m.ivL, 1e-12);
+        assert(m.putDelta < 0 && m.callDelta > 0, 'signed wings');
+      }
+    });
+
     test('zero greek dials leave the request inactive', () => {
       const s = F.defaultState();
       s.quoteGrid = null;

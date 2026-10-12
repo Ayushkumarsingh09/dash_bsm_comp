@@ -1851,6 +1851,27 @@
     }).filter((p) => isNum(p.delta) && isNum(p.iv));
   }
 
+  function brokerMarks(state) {
+    const s = materialize(state);
+    const marks = [];
+    for (const delta of [0.25, 0.10]) {
+      const q = quoteFly(s, delta);
+      const w = q.wings;
+      if (!w.ordered || !isNum(w.ivL) || !isNum(w.ivC) || !isNum(w.ivU)) continue;
+      marks.push({
+        delta: delta,
+        label: Math.round(delta * 100) + 'Δ',
+        Kl: w.Kl, Kc: w.Kc, Ku: w.Ku,
+        putDelta: signedDelta(s, w.Kl, 'put'),
+        callDelta: signedDelta(s, w.Ku, 'call'),
+        ivL: w.ivL, ivC: w.ivC, ivU: w.ivU,
+        bf: q.fly,
+        rr: w.ivU - w.ivL
+      });
+    }
+    return marks;
+  }
+
   function flyCurve(state) {
     const s0 = materialize(state);
     const fwd = forward(s0);
@@ -2587,7 +2608,7 @@
     unitLegs, packagePoints, payoff, payoffLimits, breakevens, extrema, greeksOf,
     fitSVI, fitSSVI, varianceInterp, getHistory, resetHistory, linkToFinal, stateFromDay,
     assess, decompose, attributeScenario, arbitrageReport, metricOn,
-    smileSeries, deltaSmile, flyCurve, flySweepStrike, flySweepDelta, flySweepWidth, priceFlySweep,
+    smileSeries, deltaSmile, brokerMarks, flyCurve, flySweepStrike, flySweepDelta, flySweepWidth, priceFlySweep,
     payoffSeries, greekSeries, greekMove, GREEK_DIALS, zeroGreekDials, solveGreekDials,
     heatmap, historyChart, presets, chainCSV, parseCSV, applyImport,
     quickCheck, view, fmt, businessDaysEnding, isBiz, kGrid

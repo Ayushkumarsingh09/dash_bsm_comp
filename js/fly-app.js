@@ -503,6 +503,80 @@
     return q.raw;
   }
 
+  function addBrokerGeometry(traces, lay, marks, xOf) {
+    if (!marks.length) return;
+    const shapes = [];
+    const annotations = [];
+    const span = Math.abs(xOf(marks[0], 'call') - xOf(marks[0], 'put')) || 1;
+    for (const m of marks) {
+      const xP = xOf(m, 'put');
+      const xA = xOf(m, 'atm');
+      const xC = xOf(m, 'call');
+      const yP = m.ivL * 100;
+      const yA = m.ivC * 100;
+      const yC = m.ivU * 100;
+      const mid = 0.5 * (yP + yC);
+      const chord = line(m.label + ' chord', [xP, xC], [yP, yC], '#f43f5e');
+      chord.line.width = 1.5;
+      traces.push(chord);
+      const width = Math.abs(xC - xP) || span;
+      const side = m.delta === 0.25 ? -1 : 1;
+      const xb = xA + side * width * 0.035;
+      const onPut = m.delta === 0.25;
+      const xr = (onPut ? xP : xC) + (onPut ? -1 : 1) * width * 0.045;
+      traces.push({
+        type: 'scatter', mode: 'markers', showlegend: false, hoverinfo: 'skip',
+        marker: { size: 1, color: 'rgba(0,0,0,0)' },
+        x: [xr, xb], y: [Math.max(yP, yC), Math.max(yA, 0.5 * (yP + yC))]
+      });
+      const yHi = Math.max(yP, yC, yA, mid);
+      const yLo = Math.min(yP, yC, yA, mid);
+      for (const x of [xP, xA, xC]) {
+        shapes.push({
+          type: 'line', xref: 'x', yref: 'y',
+          x0: x, x1: x, y0: yLo, y1: yHi,
+          line: { color: 'rgba(148,163,184,0.4)', width: 1, dash: 'dash' }
+        });
+      }
+      const tick = width * 0.015;
+      bracket(shapes, xb, Math.min(yA, mid), Math.max(yA, mid), tick);
+      annotations.push(tag(xb, (yA + mid) / 2, m.label + ' BF ' + (m.bf * 100).toFixed(2), side < 0 ? 'right' : 'left'));
+      bracket(shapes, xr, Math.min(yP, yC), Math.max(yP, yC), tick);
+      annotations.push(tag(xr, (yP + yC) / 2, m.label + ' RR ' + (m.rr * 100).toFixed(2), onPut ? 'right' : 'left'));
+      annotations.push({
+        x: xP, y: yP, text: '−' + m.label, showarrow: false, yshift: 12,
+        font: { color: '#94a3b8', size: 11 }
+      });
+      annotations.push({
+        x: xC, y: yC, text: m.label, showarrow: false, yshift: 12,
+        font: { color: '#94a3b8', size: 11 }
+      });
+    }
+    const atm = marks[0];
+    annotations.push({
+      x: xOf(atm, 'atm'), y: atm.ivC * 100, text: 'ATM', showarrow: false, yshift: -14,
+      font: { color: '#94a3b8', size: 11 }
+    });
+    lay.shapes = shapes;
+    lay.annotations = annotations;
+  }
+  function bracket(shapes, x, y0, y1, tick) {
+    const green = { color: '#4ade80', width: 2 };
+    shapes.push(
+      { type: 'line', xref: 'x', yref: 'y', x0: x, x1: x, y0: y0, y1: y1, line: green },
+      { type: 'line', xref: 'x', yref: 'y', x0: x - tick, x1: x + tick, y0: y0, y1: y0, line: green },
+      { type: 'line', xref: 'x', yref: 'y', x0: x - tick, x1: x + tick, y0: y1, y1: y1, line: green }
+    );
+  }
+  function tag(x, y, text, anchor) {
+    return {
+      x: x, y: y, text: text, showarrow: false,
+      xanchor: anchor, xshift: anchor === 'right' ? -10 : 10,
+      font: { color: '#4ade80', size: 12 },
+      bgcolor: 'rgba(11,14,20,0.75)'
+    };
+  }
+
   function renderChart(view) {
     if (chartId === 'smile') {
       const s = F.smileSeries(state, history);
@@ -520,15 +594,21 @@
         y: [view.wings.ivL, view.wings.ivC, view.wings.ivU].map((v) => v * 100),
         marker: { size: 10, color: ['#7dd3fc', '#f59e0b', '#fca5a5'] }
       });
-      draw(traces, layout('Implied volatility vs strike', 'IV (vol points)', 'Strike'),
-        'Market in synthetic mode is the variance-interpolated 60-DTE grid when linked, otherwise the parametric generator. SVI/SSVI are fits, not prints. |k|>0.30 is outside the quoted grid.',
+      const smileLay = layout('Implied volatility vs strike', 'IV (vol points)', 'Strike');
+      const marks = F.brokerMarks(state);
+      addBrokerGeometry(traces, smileLay, marks, (m, side) => side === 'put' ? m.Kl : side === 'call' ? m.Ku : m.Kc);
+      draw(traces, smileLay,
+        'The red chord joins the 10Δ or 25Δ put to the matching call. BF is the vol-point gap from that chord down to the center. RR is call-wing vol minus put-wing vol. These are smile quotes, not the package debit. |k|>0.30 is outside the quoted grid.',
         xs.map((x, i) => [x, s.rows[i].market, s.rows[i].baseline]));
     } else if (chartId === 'delta') {
       const rows = F.deltaSmile(state);
-      draw([
+      const traces = [
         line('OTM IV vs signed delta', rows.map((r) => r.delta), rows.map((r) => r.iv * 100), '#e6edf7')
-      ], layout('Implied volatility vs ' + state.deltaConv + ' delta', 'IV (vol points)', 'Signed delta (put < 0 < call)'),
-        'Puts use the put delta, calls the call delta, under the selected convention. 10/25/35/50 markers are solved on this smile.',
+      ];
+      const deltaLay = layout('Implied volatility vs ' + state.deltaConv + ' delta', 'IV (vol points)', 'Signed delta (put < 0 < call)');
+      addBrokerGeometry(traces, deltaLay, F.brokerMarks(state), (m, side) => side === 'put' ? m.putDelta : side === 'call' ? m.callDelta : 0);
+      draw(traces, deltaLay,
+        'Puts use the put delta, calls the call delta. BF is the gap from the wing chord to ATM. RR is the call wing minus the put wing, in vol points.',
         rows.map((r) => [r.delta, r.iv, r.K]));
     } else if (chartId === 'flyK') {
       const rows = F.flySweepStrike(state, history).filter((r) => r.ordered);
