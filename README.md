@@ -51,9 +51,21 @@ Moneyness uses **signed forward log-moneyness** ln(F/K) with F = S e^{(r−q)T}.
 - Analytical vs finite-difference validation suite
 - Call / Put toggle, presets, CSV/JSON/Excel export
 
+## SPX volatility fly lab
+
+[`fly.html`](fly.html) is a separate research terminal for implied-volatility flies, option-price butterflies, and tradable butterfly packages. It is not a payoff toy: every curve is computed from the shared BSM engine plus an explicit smile.
+
+Open [`fly.html`](fly.html). Engine tests: [`fly-tests.html`](fly-tests.html), or `node tests/run-fly.js`.
+
+The book opens on a **synthetic** one-year sample (exactly 252 business days ending 2026-10-09, seed `20261012`). Each session is a 60-calendar-day smile built by interpolating total variance between 45 and 75 DTE. A 40-session warm-up is used only for realized volatility and drawdown and is excluded from every score. A labeled slice is in [`data/synthetic-spx-60d-sample.csv`](data/synthetic-spx-60d-sample.csv). Importing a chain replaces the live smile only; it is never mixed into that history. Files spanning more than a year are rejected.
+
+Positive residual means the fly is **expensive** versus that method's reference. Cheap is not a buy signal.
+
+IV fly and package P&L are different objects. The raw fly is `(IV_lower + IV_upper) / 2 − IV_center` in decimal volatility (×100 = vol points). The normalized price fly is `0.5 P(K1) + 0.5 P(K3) − P(K2)`.
+
 ## Run locally
 
-No build step. Open `index.html`, `chain.html`, or `atlas.html` in a browser.
+No build step. Open `index.html`, `chain.html`, `atlas.html`, or `fly.html` in a browser.
 
 If a browser blocks Chart.js from `file://`, serve the folder, for example:
 
@@ -61,7 +73,7 @@ If a browser blocks Chart.js from `file://`, serve the folder, for example:
 npx --yes serve .
 ```
 
-Shared engine: [`js/bsm-engine.js`](js/bsm-engine.js). Atlas UI: [`js/atlas.js`](js/atlas.js).
+Shared pricing engine: [`js/bsm-engine.js`](js/bsm-engine.js). Atlas UI: [`js/atlas.js`](js/atlas.js). Fly engine: [`js/fly-engine.js`](js/fly-engine.js).
 
 ## Model notes
 

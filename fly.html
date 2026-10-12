@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SPX Vol Fly Research</title>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script src="js/bsm-engine.js"></script>
+<script src="js/fly-engine.js"></script>
+<style>
+:root {
+  --bg: #0b0e14; --bg2: #12161f; --bg3: #1a2030; --bg4: #222a3a;
+  --border: #2a3344; --border2: #3a4558; --text: #e6edf7; --muted: #8b95a8;
+  --accent: #3d9cf0; --accent2: #2dd4bf; --up: #22c55e; --down: #ef4444;
+  --warn: #f59e0b; --font: "Segoe UI", system-ui, sans-serif;
+  --mono: Consolas, "SF Mono", monospace; --radius: 6px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body { font-family: var(--font); background: var(--bg); color: var(--text); font-size: 13px; line-height: 1.4; }
+a { color: var(--accent); }
+button, input, select, textarea { font: inherit; color: inherit; }
+.app-header {
+  position: sticky; top: 0; z-index: 20; background: var(--bg2);
+  border-bottom: 1px solid var(--border); padding: 8px 14px;
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+}
+.brand { font-weight: 700; letter-spacing: 0.04em; }
+.brand span { color: var(--accent2); }
+.nav { display: flex; flex-wrap: wrap; gap: 6px; }
+.nav a {
+  text-decoration: none; border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 5px 10px; color: var(--muted);
+}
+.nav a.active, .nav a:hover { color: var(--text); background: var(--bg4); }
+.pills { margin-left: auto; display: flex; flex-wrap: wrap; gap: 6px; }
+.pill { border: 1px solid var(--border); border-radius: 999px; padding: 3px 8px; font-family: var(--mono); font-size: 11px; }
+.pill strong { color: var(--text); font-weight: 600; }
+.banner {
+  margin: 8px 14px 0; padding: 8px 10px; border: 1px solid #9a3412; background: #431407;
+  color: #ffedd5; border-radius: var(--radius); font-size: 12px;
+}
+.layout { display: grid; grid-template-columns: 300px minmax(0, 1fr) 300px; gap: 10px; padding: 10px 14px 20px; }
+@media (max-width: 1180px) { .layout { grid-template-columns: 1fr; } }
+.card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; }
+.card h2, .side h3 {
+  font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin: 8px 0;
+}
+.side { max-height: calc(100vh - 120px); overflow: auto; padding-right: 4px; }
+.field { display: flex; flex-direction: column; gap: 2px; margin-bottom: 6px; }
+.field label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.field .pair { display: flex; gap: 6px; }
+.field input[type="range"] { flex: 1; }
+.field input[type="number"], .field input[type="text"], .field select, textarea {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 4px 6px; font-family: var(--mono); width: 100%;
+}
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+.tabs button, .btn {
+  background: var(--bg4); border: 1px solid var(--border2); color: var(--text);
+  border-radius: 4px; padding: 5px 8px; cursor: pointer;
+}
+.tabs button.active { background: #1e3a5f; border-color: var(--accent); }
+.btn.sm { padding: 3px 7px; font-size: 11px; }
+.btn.primary { background: #1e3a5f; border-color: var(--accent); }
+.row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.chart { min-height: 460px; }
+.muted { color: var(--muted); }
+.mono { font-family: var(--mono); }
+table { width: 100%; border-collapse: collapse; font-size: 11px; font-family: var(--mono); }
+th, td { border-bottom: 1px solid var(--border); padding: 4px 6px; text-align: right; white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th { color: var(--muted); font-weight: 600; }
+.cheap { color: var(--up); } .fair { color: var(--warn); } .expensive { color: var(--down); } .insufficient { color: var(--muted); }
+.metric { background: var(--bg3); border: 1px solid var(--border); border-radius: 4px; padding: 6px; margin-bottom: 6px; }
+.metric .k { font-size: 10px; color: var(--muted); text-transform: uppercase; }
+.metric .v { font-family: var(--mono); font-size: 16px; }
+.warn-line { color: #fdba74; font-size: 11px; margin: 4px 0; }
+details { margin-top: 8px; }
+summary { cursor: pointer; color: var(--accent2); }
+.scroll { overflow: auto; max-height: 280px; }
+#bottom { margin: 0 14px 20px; }
+</style>
+</head>
+<body>
+<header class="app-header">
+  <div class="brand">SPX <span>VOL FLY</span></div>
+  <nav class="nav">
+    <a href="index.html">Sensitivity Lab</a>
+    <a href="chain.html">Chain Workbook</a>
+    <a href="atlas.html">Graph Atlas</a>
+    <a href="fly.html" class="active">Vol Fly Lab</a>
+    <a href="fly-tests.html">Engine Tests</a>
+  </nav>
+  <div class="pills" id="pills"></div>
+</header>
+<div class="banner" id="banner">SYNTHETIC DEMONSTRATION — not live SPX. A historically cheap fly is not a buy, not a forecast, and not executable edge after spread, fees, and model error.</div>
+<div class="layout">
+  <aside class="card side" id="controls"></aside>
+  <main class="card">
+    <div class="tabs" id="chartTabs"></div>
+    <div class="row" id="chartTools" style="margin-bottom:8px;"></div>
+    <div id="chart" class="chart"></div>
+    <p class="muted" id="chartNote" style="margin-top:6px;"></p>
+  </main>
+  <aside class="card side" id="rail"></aside>
+</div>
+<section class="card" id="bottom"></section>
+<script src="js/fly-app.js"></script>
+</body>
+</html>

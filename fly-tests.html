@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Fly engine tests</title>
+<script src="js/bsm-engine.js"></script>
+<script src="js/fly-engine.js"></script>
+<script src="js/fly-tests.js"></script>
+<style>
+body { font: 14px/1.4 Consolas, monospace; background: #0b0e14; color: #e6edf7; padding: 20px; }
+.pass { color: #22c55e; } .fail { color: #ef4444; }
+a { color: #3d9cf0; }
+</style>
+</head>
+<body>
+<p><a href="fly.html">← Vol Fly Lab</a></p>
+<h1 id="sum">Running…</h1>
+<pre id="out"></pre>
+<script>
+const results = runFlyTests();
+const failed = results.filter((r) => !r.pass);
+document.getElementById('sum').textContent = (results.length - failed.length) + '/' + results.length + ' passed';
+document.getElementById('out').innerHTML = results.map((r) =>
+  '<div class="' + (r.pass ? 'pass' : 'fail') + '">' + (r.pass ? 'PASS  ' : 'FAIL  ') + r.name + (r.err ? '\n      ' + r.err : '') + '</div>'
+).join('');
+</script>
+</body>
+</html>
