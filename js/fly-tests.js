@@ -394,6 +394,60 @@
       }
     });
 
+    test('total variance blend keeps a flat smile flat', () => {
+      const t1 = 45 / 365, t2 = 75 / 365, t = 60 / 365;
+      near(F.varianceBlend(0.2, t1, 0.2, t2, t), 0.2, 1e-12);
+      near(F.varianceBlend(0.2, t1, 0.25, t2, t), 0.232513441, 1e-6);
+    });
+
+    test('a narrow quoted smile still locates the 25 delta wings', () => {
+      const s = F.defaultState();
+      s.quoteGrid = [];
+      s.linkedToFinal = false;
+      F.ensureT(s);
+      for (let k = -0.08; k <= 0.08 + 1e-9; k += 0.02) {
+        s.quoteGrid.push({ k: Math.round(k * 1e4) / 1e4, iv: 0.18 + Math.max(-k, 0) * 0.4, stale: false });
+      }
+      s.quoteGrid.T = s.T;
+      const marks = F.brokerMarks(s);
+      const m25 = marks.filter((m) => Math.abs(m.delta - 0.25) < 1e-9);
+      assert(m25.length === 1, '25 delta quote');
+      const Fwd = F.forward(s);
+      assert(m25[0].Kl < Fwd && m25[0].Ku > Fwd, 'wings straddle the forward');
+      const far = F.ivAt(s, Fwd * Math.exp(-0.2));
+      assert(!Number.isFinite(far.iv), 'outside the listed strikes stays blank');
+    });
+
+    test('ingested market history does not replace the synthetic study', () => {
+      const ks = F.kGrid();
+      const sessions = [];
+      let S = 5000;
+      for (let i = 0; i < 80; i++) {
+        S *= 1.001;
+        const iv = ks.map((k) => (Math.abs(k) <= 0.08 + 1e-9 ? 0.2 + Math.max(-k, 0) * 0.3 : null));
+        sessions.push({
+          date: '2024-04-' + String(i).padStart(2, '0'),
+          S, r: 0.04, q: 0.02, iv,
+          stale: iv.map((v) => (v == null ? 1 : 0)),
+          dteLo: 52, dteHi: 73, termSlope: 0, calendarBreaks: 0
+        });
+      }
+      const h = F.ingestMarketHistory({ sessions, kGrid: ks, family: 'OWSNP', ratesNote: 'parity', interpolation: 'variance' });
+      assert(h.synthetic === false, 'flag');
+      assert(h.warmup.length === 40 && h.days.length === 40, 'window ' + h.warmup.length + '/' + h.days.length);
+      const syn = F.getHistory();
+      assert(syn.synthetic !== false && syn.days.length === 252, 'synthetic cache');
+      const s = F.linkToFinal(F.defaultState(), h);
+      assert(s.source === 'market', 'source');
+      near(F.ivAt(s, F.forward(s)).iv, 0.2, 1e-6, 'atm');
+      assert(Number.isFinite(h.days[h.days.length - 1].fly25), '25 delta fly');
+      const a = F.assess(s, h);
+      assert(a.methods.length === 15, 'methods');
+      assert(a.warmupExcluded === 40 && a.sampleN === 40, 'scores use the market window');
+      const smile = F.smileSeries(s, h);
+      assert(smile.histMean.length > 0 && smile.histMean.every((v) => Number.isFinite(v)), 'pca');
+    });
+
     return results;
   }
 

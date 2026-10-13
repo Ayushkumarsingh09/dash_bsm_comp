@@ -40,6 +40,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
   margin: 8px 14px 0; padding: 8px 10px; border: 1px solid #9a3412; background: #431407;
   color: #ffedd5; border-radius: var(--radius); font-size: 12px;
 }
+.bookbar {
+  margin: 8px 14px 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+}
+.bookbar .active { border-color: var(--accent2); color: var(--accent2); }
+#bookNote { flex: 1 1 280px; }
 .layout { display: grid; grid-template-columns: 300px minmax(0, 1fr) 300px; gap: 10px; padding: 10px 14px 12px; align-items: stretch; }
 @media (max-width: 1180px) { .layout { grid-template-columns: 1fr; } }
 .card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; }
@@ -122,11 +127,18 @@ summary { cursor: pointer; color: var(--accent2); }
     <a href="chain.html">Chain Workbook</a>
     <a href="atlas.html">Graph Atlas</a>
     <a href="fly.html" class="active">Vol Fly Lab</a>
+    <a href="fly.html#real" id="navReal">Real SNP</a>
     <a href="fly-tests.html">Engine Tests</a>
   </nav>
   <div class="pills" id="pills"></div>
 </header>
 <div class="banner" id="banner">SYNTHETIC DEMONSTRATION — not live SPX. A historically cheap fly is not a buy, not a forecast, and not executable edge after spread, fees, and model error.</div>
+<section class="card bookbar" id="bookBar">
+  <strong>Book</strong>
+  <button class="btn sm active" id="bookSyn" type="button">Synthetic sample</button>
+  <button class="btn sm" id="bookReal" type="button">Real SNP chains</button>
+  <span class="muted" id="bookNote">Synthetic 252-day study. The listed chains are not mixed into it.</span>
+</section>
 <div class="layout">
   <aside class="card side" id="controls"></aside>
   <main class="card stage">

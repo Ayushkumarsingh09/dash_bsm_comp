@@ -1,6 +1,9 @@
 (function () {
   const F = window.FLY;
-  const history = F.getHistory();
+  let history = F.getHistory();
+  let realHistory = null;
+  let bookId = 'synthetic';
+  let bookToken = 0;
   let state = F.linkToFinal(F.defaultState(), history);
   state.greekDials = F.zeroGreekDials();
   let liveFit = null;
@@ -219,8 +222,8 @@
       '</div>',
       '<p class="howto">Move spot or volatility, then pin the chart to compare. Open a section below for wings, shocks, or one Greek at a time.</p>',
       panel('', 'Market', [
-        '<p class="muted">Reset market reloads the last synthetic 60-day session. Editing a smile input switches from that stored smile to the sliders.</p>',
-        field('S', 'Spot', { min: 3500, max: 7500, step: 1, range: true }),
+        '<p class="muted">Reset market reloads the last session of the book you are on. Editing a smile input switches from that stored smile to the sliders.</p>',
+        field('S', 'Spot', { min: 2500, max: 12000, step: 1, range: true }),
         field('atmPct', 'ATM volatility', { min: 5, max: 80, step: 0.1, range: true }),
         '<div class="grid2">',
         field('days', 'Days to expiry', { min: 5, max: 365, step: 1, range: true }),
@@ -241,7 +244,7 @@
       ].join(''), true),
       panel('', 'Fly you are measuring', [
         sel('centerMode', 'Center', [['strike', 'Strike'], ['delta', 'Delta']]),
-        field('centerK', 'Center strike', { min: 2000, max: 9000, step: 1, range: true }),
+        field('centerK', 'Center strike', { min: 2000, max: 14000, step: 1, range: true }),
         '<div class="grid2">',
         field('centerDelta', 'Center |delta|', { min: 0.05, max: 0.95, step: 0.01, range: true }),
         sel('centerSide', 'Center side', [['call', 'Call'], ['put', 'Put']]),
@@ -353,7 +356,7 @@
       Object.assign(state, keep);
       state.quoteGrid = F.linkToFinal(F.defaultState(), history).quoteGrid;
       state.linkedToFinal = true;
-      state.source = 'synthetic';
+      state.source = history.synthetic === false ? 'market' : 'synthetic';
       state.greekDials = F.zeroGreekDials();
       write();
       schedule();
@@ -1160,9 +1163,10 @@
     document.getElementById('pngBtn').onclick = () => { if (window.Plotly) Plotly.downloadImage('chart', { format: 'png', filename: 'spx-fly' }); };
     document.getElementById('histCsv').onclick = () => {
       const h = F.historyChart(state, history);
-      download('fly-history-synthetic.csv', toCSV([['source', 'SYNTHETIC']].concat(h.dates.map((d, i) => [d, h.fly[i], h.z[i], h.outcome5d[i]]))));
+      const tag = history.synthetic === false ? 'REAL' : 'SYNTHETIC';
+      download(history.synthetic === false ? 'fly-history-snp.csv' : 'fly-history-synthetic.csv', toCSV([['source', tag]].concat(h.dates.map((d, i) => [d, h.fly[i], h.z[i], h.outcome5d[i]]))));
     };
-    document.getElementById('chainCsv').onclick = () => download('synthetic-spx-60d-sample.csv', F.chainCSV(history));
+    document.getElementById('chainCsv').onclick = () => download(history.synthetic === false ? 'snp-60d-chain.csv' : 'synthetic-spx-60d-sample.csv', F.chainCSV(history));
     const imp = document.createElement('input');
     imp.type = 'file'; imp.accept = '.csv,text/csv';
     imp.style.display = 'none';
@@ -1197,10 +1201,89 @@
     a.click();
   }
 
+  function bookNoteText() {
+    if (bookId !== 'real') return 'Synthetic 252-day study. The listed chains are not mixed into it.';
+    const day = history.days[history.days.length - 1];
+    const tenors = day && day.dteLo != null ? ' Last session blends the ' + day.dteLo + '-day and ' + day.dteHi + '-day expiries.' : '';
+    return (history.ratesNote || '') + ' ' + (history.interpolation || '') + tenors;
+  }
+  function setBookButtons() {
+    const syn = document.getElementById('bookSyn');
+    const real = document.getElementById('bookReal');
+    if (syn) syn.classList.toggle('active', bookId === 'synthetic');
+    if (real) real.classList.toggle('active', bookId === 'real');
+    const navFly = document.querySelector('.nav a[href="fly.html"]');
+    const navReal = document.getElementById('navReal');
+    if (navFly) navFly.classList.toggle('active', bookId !== 'real');
+    if (navReal) navReal.classList.toggle('active', bookId === 'real');
+  }
+  function applyBook(next, id) {
+    history = next;
+    bookId = id;
+    pinnedState = null;
+    paintSerial += 1;
+    const keep = {
+      wingMode: state.wingMode, strategy: state.strategy, deltaConv: state.deltaConv,
+      sticky: state.sticky, tradeQty: state.tradeQty, priceConvention: state.priceConvention,
+      flyQuote: state.flyQuote, centerMode: state.centerMode, wingDelta: state.wingDelta,
+      centerDelta: state.centerDelta, centerSide: state.centerSide
+    };
+    state = F.linkToFinal(F.defaultState(), history);
+    Object.assign(state, keep);
+    if (state.centerMode === 'strike') state.centerK = F.forward(state);
+    state.greekDials = F.zeroGreekDials();
+    state.source = history.synthetic === false ? 'market' : 'synthetic';
+    const note = document.getElementById('bookNote');
+    if (note) note.textContent = bookNoteText();
+    setBookButtons();
+    write();
+    render();
+  }
+  function useReal() {
+    const token = ++bookToken;
+    const note = document.getElementById('bookNote');
+    if (realHistory) {
+      applyBook(realHistory, 'real');
+      return;
+    }
+    if (note) note.textContent = 'Building the constant 60-day smiles from the listed weekly chains…';
+    fetch('data/snp-60d.json').then((res) => {
+      if (!res.ok) throw new Error('missing');
+      return res.json();
+    }).then((payload) => {
+      if (token !== bookToken) return;
+      realHistory = F.ingestMarketHistory(payload);
+      applyBook(realHistory, 'real');
+    }).catch(() => {
+      if (token !== bookToken) return;
+      if (note) note.textContent = 'The real chain file did not load. The synthetic study is still available.';
+    });
+  }
+  function syncBook() {
+    if (location.hash === '#real') useReal();
+    else if (bookId !== 'synthetic') applyBook(F.getHistory(), 'synthetic');
+    else {
+      const note = document.getElementById('bookNote');
+      if (note) note.textContent = bookNoteText();
+      setBookButtons();
+    }
+  }
+
   buildControls();
   buildChartChrome();
   write();
   render();
+  document.getElementById('bookSyn').onclick = () => {
+    bookToken += 1;
+    if (location.hash) location.hash = '';
+    else syncBook();
+  };
+  document.getElementById('bookReal').onclick = () => {
+    if (location.hash !== '#real') location.hash = 'real';
+    else useReal();
+  };
+  window.addEventListener('hashchange', syncBook);
+  syncBook();
   window.addEventListener('resize', () => {
     const el = plotEl();
     if (!window.Plotly || !el || !el.data) return;

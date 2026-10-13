@@ -415,6 +415,7 @@
   }
 
   function deltaAbs(s, K, type) {
+    if (!isNum(ivAt(s, K).iv)) return NaN;
     const g = bsm(s, K, type);
     if (s.deltaConv === 'forward') return Math.abs(g.delta * Math.exp(s.q * s.T));
     if (s.deltaConv === 'premium') return Math.abs(g.delta - g.price / s.S);
@@ -422,6 +423,7 @@
   }
 
   function signedDelta(s, K, type) {
+    if (!isNum(ivAt(s, K).iv)) return NaN;
     const g = bsm(s, K, type);
     if (s.deltaConv === 'forward') return g.delta * Math.exp(s.q * s.T);
     if (s.deltaConv === 'premium') return g.delta - g.price / s.S;
@@ -432,6 +434,22 @@
     const tgt = clamp(target, 0.02, 0.98);
     let lo = Math.max(1, s.S * 0.35);
     let hi = s.S * 2.2;
+    // A quoted smile covers only the listed strikes. Search inside that band
+    // instead of treating the first off-grid probe as a missing delta.
+    if (!isNum(deltaAbs(s, 0.5 * (lo + hi), type))) {
+      const F = forward(s);
+      let a = NaN;
+      let b = NaN;
+      for (let i = 0; i <= 52; i++) {
+        const K = F * Math.exp(-0.30 + 0.52 * i / 52);
+        if (!isNum(deltaAbs(s, K, type))) continue;
+        if (!isNum(a)) a = K;
+        b = K;
+      }
+      if (!(b > a)) return NaN;
+      lo = a;
+      hi = b;
+    }
     for (let i = 0; i < 56; i++) {
       const mid = 0.5 * (lo + hi);
       const d = deltaAbs(s, mid, type);
@@ -941,7 +959,7 @@
   function stateFromDay(day) {
     const s = defaultState();
     Object.assign(s, {
-      source: 'synthetic',
+      source: day.source || 'synthetic',
       linkedToFinal: false,
       asOf: day.date,
       S: day.S, r: day.r, q: day.q, days: 60, dayCount: 365,
@@ -954,7 +972,7 @@
       bump: day.shape.bump,
       bumpK: day.shape.bumpK,
       termSlope: day.shape.termSlope,
-      quoteGrid: day.ks.map((k, i) => ({ k, iv: day.iv[i], stale: !!day.stale[i] })),
+      quoteGrid: day.ks.map((k, i) => ({ k, iv: day.iv[i], stale: !!day.stale[i] })).filter((p) => isNum(p.iv)),
       centerMode: 'strike',
       centerK: day.S * Math.exp((day.r - day.q) * day.T),
       shocks: zeroShocks()
@@ -962,6 +980,115 @@
     s.quoteGrid.T = day.T;
     ensureT(s);
     return s;
+  }
+
+  function varianceBlend(iv1, T1, iv2, T2, T) {
+    if (!(T2 > T1) || !(T > 0) || !isNum(iv1) || !isNum(iv2)) return NaN;
+    const w1 = iv1 * iv1 * T1;
+    const w2 = iv2 * iv2 * T2;
+    const w = w1 + (T - T1) / (T2 - T1) * (w2 - w1);
+    if (!(w > 0)) return NaN;
+    return Math.sqrt(w / T);
+  }
+
+  function fitShape(ks, ivs, stale, termSlope) {
+    const grid = [];
+    for (let i = 0; i < ks.length; i++) {
+      if (!isNum(ivs[i])) continue;
+      grid.push({ k: ks[i], iv: ivs[i], stale: !!(stale && stale[i]) });
+    }
+    const atm = interpKGrid(grid, 0, 60 / 365).iv;
+    const rows = [];
+    const ys = [];
+    for (const p of grid) {
+      if (p.stale || Math.abs(p.k) < 1e-8) continue;
+      const k = p.k;
+      rows.push([k < 0 ? -k : 0, k > 0 ? k : 0, 0.5 * k * k, k * k * k, Math.abs(k * k * k)]);
+      ys.push(p.iv - (isNum(atm) ? atm : p.iv));
+    }
+    const beta = rows.length >= 5 ? ols(rows, ys) : null;
+    return {
+      atm: isNum(atm) ? atm : 0.2,
+      putSkew: beta ? beta[0] : 0,
+      callSkew: beta ? beta[1] : 0,
+      curvature: beta ? beta[2] : 0,
+      asymmetry: beta ? beta[3] : 0,
+      wingSteepness: beta ? beta[4] : 0,
+      bump: 0, bumpK: 0, bumpWidth: 0.03,
+      termSlope: isNum(termSlope) ? termSlope : 0
+    };
+  }
+
+  function ingestMarketHistory(payload) {
+    const ks = payload && payload.kGrid && payload.kGrid.length ? payload.kGrid.slice() : kGrid();
+    const sessions = payload && payload.sessions ? payload.sessions.slice() : [];
+    const need = VALUATION_DAYS + WARMUP_DAYS;
+    const use = sessions.length > need ? sessions.slice(sessions.length - need) : sessions.slice();
+    const T = 60 / 365;
+    const rets = [];
+    let peak = use.length ? use[0].S : 1;
+    const rows = use.map((s, i) => {
+      const prev = i ? use[i - 1].S : s.S;
+      const ret = i === 0 || !(s.S > 0) || !(prev > 0) ? 0 : Math.log(s.S / prev);
+      rets.push(ret);
+      peak = Math.max(peak, s.S);
+      const window = rets.slice(Math.max(0, rets.length - 21));
+      const rv = Math.sqrt(mean(window.map((x) => x * x)) * 252);
+      const downs = window.filter((x) => x < 0);
+      const downsideRv = downs.length ? Math.sqrt(mean(downs.map((x) => x * x)) * 252) : 0;
+      const iv = ks.map((_, j) => (s.iv && isNum(s.iv[j]) ? s.iv[j] : NaN));
+      const stale = ks.map((_, j) => !isNum(iv[j]) || !!(s.stale && s.stale[j]));
+      const tailL = ivAtKStored(ks, iv, -0.06);
+      const tail0 = ivAtKStored(ks, iv, 0);
+      return {
+        date: s.date, S: s.S, r: s.r, q: s.q, T, days: 60, dayCount: 365,
+        shape: fitShape(ks, iv, stale, s.termSlope),
+        iv, stale, ks, rv, downsideRv,
+        drawdown: peak > 0 ? s.S / peak - 1 : 0,
+        ret,
+        tail: isNum(tailL) && isNum(tail0) ? tailL - tail0 : NaN,
+        calendarBreaks: s.calendarBreaks || 0,
+        source: 'market',
+        dteLo: s.dteLo, dteHi: s.dteHi,
+        rateSource: s.rateSource || 'parity'
+      };
+    });
+    const warmupN = rows.length > WARMUP_DAYS + 30 ? WARMUP_DAYS : Math.min(WARMUP_DAYS, Math.max(0, rows.length - 30));
+    const warmup = rows.slice(0, warmupN);
+    const days = rows.slice(warmupN);
+    warmup.forEach((d) => { d.inValuation = false; });
+    days.forEach((d) => { d.inValuation = true; });
+    const last = rows.length ? rows[rows.length - 1].date : '';
+    const history = {
+      version: VERSION,
+      synthetic: false,
+      seed: 'snp-' + last,
+      end: last,
+      start: rows.length ? rows[0].date : '',
+      valuationDays: days.length,
+      warmupDays: warmup.length,
+      warmup, days, kGrid: ks,
+      targetDTE: 60,
+      dayCount: 365,
+      family: (payload && payload.family) || 'OWSNP',
+      label: 'REAL listed SNP weeklies (OWSNP), ' + (days[0] ? days[0].date : '') + ' to ' + last +
+        '. Constant 60 DTE. ' + days.length + ' valuation sessions after ' + warmup.length +
+        ' warm-up sessions. Not the synthetic sample.',
+      ratesNote: (payload && payload.ratesNote) || '',
+      interpolation: (payload && payload.interpolation) || ''
+    };
+    for (const day of days) {
+      const st = stateFromDay(day);
+      const q25 = quoteFly(st, 0.25);
+      day.fly25 = q25.fly;
+      day.k25L = q25.wings.kL;
+      day.k25U = q25.wings.kU;
+      const fit = fitSVI(day.ks, day.iv, day.T, day.stale);
+      day.sviOk = !!fit.ok;
+      day.sviIv = day.ks.map((k) => (fit.ok ? fit.iv(k) : NaN));
+      day.sviRmse = fit.ok ? fit.rmseVolPts : NaN;
+    }
+    return history;
   }
 
   function getHistory() {
@@ -1371,10 +1498,27 @@
   function pcaBasis(history, end) {
     const key = end + ':' + history.seed;
     if (_pcaCache.has(key)) return _pcaCache.get(key);
-    const ks = [];
-    for (let k = -0.20; k <= 0.12 + 1e-9; k += 0.04) ks.push(round(k, 4));
-    const rows = [];
-    for (let i = 0; i < end; i++) rows.push(projectDay(history.days[i], ks));
+    const fullKs = [];
+    for (let k = -0.20; k <= 0.12 + 1e-9; k += 0.04) fullKs.push(round(k, 4));
+    let rows = [];
+    for (let i = 0; i < end; i++) rows.push(projectDay(history.days[i], fullKs));
+    let ks = fullKs;
+    if (rows.length >= 10) {
+      const keep = [];
+      for (let j = 0; j < fullKs.length; j++) {
+        let c = 0;
+        for (let i = 0; i < rows.length; i++) if (isNum(rows[i][j])) c++;
+        if (c === rows.length || c >= Math.max(10, Math.floor(0.8 * rows.length))) keep.push(j);
+      }
+      const filtered = [];
+      for (let i = 0; i < rows.length; i++) {
+        if (keep.every((j) => isNum(rows[i][j]))) filtered.push(keep.map((j) => rows[i][j]));
+      }
+      if (keep.length >= 3 && filtered.length >= 10) {
+        ks = keep.map((j) => fullKs[j]);
+        rows = filtered;
+      }
+    }
     const n = rows.length;
     const p = ks.length;
     const mu = Array(p).fill(0);
@@ -2443,12 +2587,17 @@
         const half = Math.max(0.02, Math.abs(g.price) * rel) + (s.slippagePts || 0);
         const bid = Math.max(0, g.price - half);
         const ask = g.price + half;
-        const oi = Math.round(800 * Math.exp(-0.5 * (k / 0.12) * (k / 0.12)));
+        let oi = '';
+        let vol = '';
+        if (h.synthetic !== false) {
+          oi = Math.round(800 * Math.exp(-0.5 * (k / 0.12) * (k / 0.12)));
+          vol = Math.round(oi * 0.08);
+        }
         const dlt = s.deltaConv === 'forward' ? g.delta * Math.exp(s.q * s.T) : g.delta;
         lines.push([
-          'SYNTHETIC', day.date, round(day.S, 2), round(F, 2), 60, day.T.toFixed(6), round(K, 2), type,
+          h.synthetic === false ? 'REAL' : 'SYNTHETIC', day.date, round(day.S, 2), round(F, 2), 60, day.T.toFixed(6), round(K, 2), type,
           bid.toFixed(4), ask.toFixed(4), g.price.toFixed(4), iv.toFixed(6),
-          dlt.toFixed(4), oi, Math.round(oi * 0.08), day.r, day.q, day.stale[i] ? 1 : 0
+          dlt.toFixed(4), oi, vol, day.r, day.q, day.stale[i] ? 1 : 0
         ].join(','));
       }
     }
@@ -2596,7 +2745,7 @@
       forward: forward(work),
       baselineForward: forward(base),
       label: state.source === 'imported' ? (state.importLabel || 'IMPORTED') : h.label,
-      syntheticHistory: !(state.historyOverride && state.historyOverride.synthetic === false)
+      syntheticHistory: h.synthetic !== false && !(state.historyOverride && state.historyOverride.synthetic === false)
     };
   }
 
@@ -2606,7 +2755,7 @@
     yearFrac, forward, ensureT, shapeIV, materialize, ivAt, bsm, impliedVol,
     strikeForDelta, signedDelta, deltaAbs, resolveWings, ivFlyOf, priceFly, priceOf,
     unitLegs, packagePoints, payoff, payoffLimits, breakevens, extrema, greeksOf,
-    fitSVI, fitSSVI, varianceInterp, getHistory, resetHistory, linkToFinal, stateFromDay,
+    fitSVI, fitSSVI, varianceInterp, varianceBlend, getHistory, resetHistory, linkToFinal, stateFromDay, ingestMarketHistory,
     assess, decompose, attributeScenario, arbitrageReport, metricOn,
     smileSeries, deltaSmile, brokerMarks, flyCurve, flySweepStrike, flySweepDelta, flySweepWidth, priceFlySweep,
     payoffSeries, greekSeries, greekMove, GREEK_DIALS, zeroGreekDials, solveGreekDials,
