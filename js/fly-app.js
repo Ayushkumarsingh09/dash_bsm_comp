@@ -14,18 +14,18 @@
   const scenarios = loadScenarios();
 
   const CHARTS = [
-    ['smile', '1 IV vs strike'],
-    ['delta', '2 IV vs delta'],
-    ['flyK', '3 Fly vs strike'],
-    ['flyD', '4 Fly vs delta'],
-    ['width', '5 Fly vs width'],
-    ['price', '6 Price fly'],
-    ['payoff', '7 Payoff / P&L'],
-    ['greeks', '8 Greeks'],
-    ['gmix', 'Greek mix'],
-    ['heat', '9 Heatmap'],
-    ['hist', '10 History'],
-    ['attr', 'Attribution']
+    ['smile', 'Smile', 'Implied volatility, with 10Δ and 25Δ butterfly brackets'],
+    ['delta', 'Smile by delta', 'The same smile against delta'],
+    ['flyK', 'Fly by strike', 'How the fly changes with the center strike'],
+    ['flyD', 'Fly by delta', 'How the fly changes with the center delta'],
+    ['width', 'Fly by width', 'How the fly changes as the wings get wider'],
+    ['price', 'Price fly', 'The option premium of the butterfly'],
+    ['payoff', 'Payoff', 'Expiration and mark-to-market P&L'],
+    ['greeks', 'Greeks', 'One Greek versus spot. Pick which Greek above the chart'],
+    ['gmix', 'Greek change', 'How a pinned move splits across every Greek'],
+    ['heat', 'Heatmap', 'Two inputs at once. Set the axes in the left panel'],
+    ['hist', 'History', 'One year of the 60-day fly'],
+    ['attr', 'What moved it', 'Which shock caused the fly to change']
   ];
 
   function esc(s) {
@@ -173,6 +173,28 @@
     document.getElementById('heatX').value = s.heatmap.x;
     document.getElementById('heatY').value = s.heatmap.y;
     document.getElementById('heatM').value = s.heatmap.metric;
+    syncPanels();
+  }
+  function showField(id, on) {
+    const el = document.getElementById(id);
+    const field = el && el.closest('.field');
+    if (field) field.hidden = !on;
+  }
+  function syncPanels() {
+    const center = document.getElementById('centerMode');
+    const wing = document.getElementById('wingMode');
+    if (!center || !wing) return;
+    const byStrike = center.value === 'strike';
+    const byDelta = center.value === 'delta';
+    showField('centerK', byStrike);
+    showField('centerDelta', byDelta);
+    showField('centerSide', byDelta);
+    showField('wingStrike', wing.value === 'strike');
+    showField('wingAsym', wing.value === 'strike');
+    showField('wingLog', wing.value === 'log');
+    showField('wingDelta', wing.value === 'delta');
+    const greekPick = document.getElementById('greekPick');
+    if (greekPick) greekPick.hidden = chartId !== 'greeks';
   }
 
   function field(id, label, attrs) {
@@ -185,106 +207,116 @@
       options.map((o) => '<option value="' + o[0] + '">' + o[1] + '</option>').join('') + '</select></div>';
   }
 
+  function panel(id, title, body, open) {
+    return '<details class="panel"' + (id ? ' id="' + id + '"' : '') + (open ? ' open' : '') + '><summary>' + title + '</summary><div class="body">' + body + '</div></details>';
+  }
   function buildControls() {
     document.getElementById('controls').innerHTML = [
-      '<h3>Market — assumptions vs the synthetic book</h3>',
-      '<p class="muted">Yellow-free numbers are assumptions. Reset to market reloads the final synthetic 60-DTE session. Editing a smile coefficient drops the stored quote grid and uses the parametric generator.</p>',
-      field('S', 'SPX spot', { min: 3500, max: 7500, step: 1, range: true }),
-      '<div class="grid2">',
-      field('rPct', 'Rate %', { min: -1, max: 10, step: 0.01, range: true }),
-      field('qPct', 'Dividend %', { min: 0, max: 6, step: 0.01, range: true }),
-      field('days', 'Days to expiry', { min: 5, max: 365, step: 1, range: true }),
-      sel('dayCount', 'Day count', [['365', 'ACT/365'], ['252', 'ACT/252']]),
-      '</div>',
-      '<p class="muted">The historical study stays on ACT/365, 60 calendar DTE, even if live pricing uses ACT/252.</p>',
-      field('atmPct', 'ATM IV (vol points)', { min: 5, max: 80, step: 0.1, range: true }),
-      field('put10', 'Put skew, vol pts at k=−0.10', { min: -5, max: 25, step: 0.1, range: true }),
-      field('call10', 'Call skew, vol pts at k=+0.10', { min: -5, max: 20, step: 0.1, range: true }),
-      field('curv10', 'Curvature, vol pts at |k|=0.10', { min: -5, max: 12, step: 0.1, range: true }),
-      field('asym10', 'Asymmetry, vol pts at k=+0.10', { min: -8, max: 8, step: 0.1, range: true }),
-      field('wing10', 'Wing steepness, vol pts at |k|=0.10', { min: 0, max: 10, step: 0.1, range: true }),
-      '<div class="grid2">',
-      field('bumpPts', 'Local bump (vol pts)', { min: -3, max: 3, step: 0.05, range: true }),
-      field('bumpK', 'Bump center k', { min: -0.2, max: 0.2, step: 0.01, range: true }),
-      '</div>',
-      '<h3>Fly construction</h3>',
-      sel('centerMode', 'Center', [['strike', 'Absolute strike'], ['delta', 'Delta']]),
-      field('centerK', 'Center strike', { min: 2000, max: 9000, step: 1, range: true }),
-      '<div class="grid2">',
-      field('centerDelta', 'Center |delta|', { min: 0.05, max: 0.95, step: 0.01, range: true }),
-      sel('centerSide', 'Center side', [['call', 'Call'], ['put', 'Put']]),
-      '</div>',
-      sel('wingMode', 'Wings', [['log', 'Fixed log-moneyness'], ['strike', 'Fixed strike distance'], ['delta', 'Fixed delta (25Δ-style)']]),
-      field('wingStrike', 'Strike wing (points)', { min: 10, max: 500, step: 1, range: true }),
-      field('wingAsym', 'Strike asymmetry (+ upper)', { min: -80, max: 80, step: 1, range: true }),
-      field('wingLog', 'Log wing', { min: 0.01, max: 0.2, step: 0.005, range: true }),
-      field('wingDelta', 'Wing |delta|', { min: 0.05, max: 0.45, step: 0.01, range: true }),
-      sel('deltaConv', 'Delta convention', [['forward', 'Forward delta'], ['spot', 'Spot delta'], ['premium', 'Premium-adjusted spot']]),
-      sel('flyQuote', 'Highlighted IV-fly definition', [
-        ['raw', 'Raw fly on the selected wings'],
-        ['atm', 'ATM-relative, user wing delta'],
-        ['d25', '25Δ butterfly vs ATM'],
-        ['dn', 'Forward-delta quoted butterfly']
-      ]),
-      '<p class="muted">An IV fly is curvature of the smile, in volatility. It is not the debit of a three-leg option position.</p>',
-      '<h3>Tradable package</h3>',
-      sel('strategy', 'Strategy', [
-        ['long_call', 'Long call fly +1/−2/+1'],
-        ['short_call', 'Short call fly'],
-        ['long_put', 'Long put fly'],
-        ['short_put', 'Short put fly'],
-        ['broken_call', 'Broken-wing call (1.6× / 0.7×)'],
-        ['dn_call', 'Delta-neutral call (body qty solved)'],
-        ['dn_put', 'Delta-neutral put']
-      ]),
-      sel('priceConvention', 'Price-fly weights', [
-        ['normalized', '0.5 / −1 / 0.5'],
-        ['unnormalized', '1 / −2 / 1'],
-        ['custom', 'Custom weights below']
-      ]),
-      '<div class="grid2">',
-      field('tradeQty', 'Trade quantity', { min: 1, max: 100, step: 1, range: true }),
-      field('multiplier', 'Multiplier', { min: 1, max: 100, step: 1, range: false }),
-      field('spreadPct', 'Half-spread % of premium', { min: 0, max: 10, step: 0.1, range: true }),
-      field('slippage', 'Slippage (points)', { min: 0, max: 2, step: 0.01, range: true }),
-      field('fee', 'Fee $ / contract', { min: 0, max: 5, step: 0.05, range: true }),
-      '</div>',
-      '<div class="field"><label>Entry premium (points, blank = baseline mid)</label><input type="number" id="entryPremium" step="0.01" /></div>',
-      sel('sticky', 'Smile when spot moves', [['moneyness', 'Sticky log-moneyness'], ['strike', 'Sticky strike']]),
-      '<h3>Scenario shocks</h3>',
-      '<p class="muted">Independent shocks are experiments. They are not a claim that spot, skew, and curvature move separately in the market. Preset K uses a realized historical day.</p>',
-      field('dS', 'Spot shock %', { min: -20, max: 20, step: 0.1, range: true }),
-      field('dAtm', 'ATM shock (vol pts)', { min: -10, max: 15, step: 0.1, range: true }),
-      field('dPut', 'Put-skew shock (pts at 0.10)', { min: -8, max: 8, step: 0.1, range: true }),
-      field('dCall', 'Call-skew shock (pts at 0.10)', { min: -8, max: 8, step: 0.1, range: true }),
-      field('dCurv', 'Curvature shock (pts at 0.10)', { min: -4, max: 4, step: 0.1, range: true }),
-      field('dWing', 'Wing shock (pts at 0.10)', { min: -3, max: 3, step: 0.1, range: true }),
-      field('dDays', 'Time shock (days)', { min: -40, max: 40, step: 1, range: true }),
-      field('drBps', 'Rate shock (bp)', { min: -100, max: 100, step: 1, range: true }),
-      field('dqBps', 'Dividend shock (bp)', { min: -50, max: 50, step: 1, range: true }),
-      field('dWidthStrike', 'Strike-width shock', { min: -50, max: 50, step: 1, range: true }),
-      field('dWidthLog', 'Log-width shock', { min: -0.05, max: 0.05, step: 0.005, range: true }),
-      field('dWidthDelta', 'Delta-width shock', { min: -0.1, max: 0.1, step: 0.01, range: true }),
-      field('dCenterDelta', 'Center-delta shock', { min: -0.2, max: 0.2, step: 0.01, range: true }),
-      field('dCost', 'Extra slippage (points)', { min: 0, max: 1, step: 0.01, range: true }),
-      '<div class="row" id="presetRow"></div>',
-      '<div class="row" style="margin-top:8px;">',
-      '<button class="btn sm" id="resetMkt" type="button">Reset to market</button>',
+      '<div class="row stick-actions">',
+      '<button class="btn sm" id="resetMkt" type="button">Reset market</button>',
       '<button class="btn sm" id="resetBase" type="button">Reset shocks</button>',
-      '<button class="btn sm primary" id="saveSc" type="button">Save scenario</button>',
+      '<button class="btn sm" id="resetDials" type="button">Reset dials</button>',
       '</div>',
-      '<div class="field" style="margin-top:8px;"><label>Scenario name</label><input type="text" id="scName" value="Case 1" /></div>',
-      '<h3>Greek dials</h3>',
-      '<p class="muted">Move one dial to change that Greek on its own. Move several to see the combination. Charts reprice the solved market. A gap means those Greeks cannot be hit together.</p>',
-      '<div class="grid2">',
-      F.GREEK_DIALS.map((d) => field('gd_' + d.key, d.label, { min: d.min, max: d.max, step: d.step, range: true })).join(''),
-      '</div>',
-      '<div id="dialFit"></div>',
-      '<button class="btn sm" id="resetDials" type="button">Reset Greek dials</button>',
-      '<h3>Heatmap axes</h3>',
-      sel('heatX', 'X', [['S', 'Spot'], ['atm', 'ATM IV'], ['putSkew', 'Put skew'], ['curvature', 'Curvature'], ['width', 'Log wing'], ['days', 'DTE'], ['centerDelta', 'Center delta']]),
-      sel('heatY', 'Y', [['atm', 'ATM IV'], ['S', 'Spot'], ['putSkew', 'Put skew'], ['curvature', 'Curvature'], ['width', 'Log wing'], ['days', 'DTE']]),
-      sel('heatM', 'Color', [['ivFly', 'IV fly'], ['priceFly', 'Price fly'], ['premium', 'Package premium'], ['pnl', 'Mark P&L vs entry'], ['delta', 'Delta'], ['gamma', 'Gamma'], ['vega', 'Vega']])
+      '<p class="howto">Move spot or volatility, then pin the chart to compare. Open a section below for wings, shocks, or one Greek at a time.</p>',
+      panel('', 'Market', [
+        '<p class="muted">Reset market reloads the last synthetic 60-day session. Editing a smile input switches from that stored smile to the sliders.</p>',
+        field('S', 'Spot', { min: 3500, max: 7500, step: 1, range: true }),
+        field('atmPct', 'ATM volatility', { min: 5, max: 80, step: 0.1, range: true }),
+        '<div class="grid2">',
+        field('days', 'Days to expiry', { min: 5, max: 365, step: 1, range: true }),
+        sel('dayCount', 'Day count', [['365', 'ACT/365'], ['252', 'ACT/252']]),
+        field('rPct', 'Rate %', { min: -1, max: 10, step: 0.01, range: true }),
+        field('qPct', 'Dividend %', { min: 0, max: 6, step: 0.01, range: true }),
+        '</div>',
+        '<p class="muted">History stays on ACT/365 and 60 days, even if pricing uses another day count.</p>',
+        field('put10', 'Put skew', { min: -5, max: 25, step: 0.1, range: true }),
+        field('call10', 'Call skew', { min: -5, max: 20, step: 0.1, range: true }),
+        field('curv10', 'Curvature', { min: -5, max: 12, step: 0.1, range: true }),
+        field('asym10', 'Asymmetry', { min: -8, max: 8, step: 0.1, range: true }),
+        field('wing10', 'Wing steepness', { min: 0, max: 10, step: 0.1, range: true }),
+        '<div class="grid2">',
+        field('bumpPts', 'Local bump', { min: -3, max: 3, step: 0.05, range: true }),
+        field('bumpK', 'Bump center', { min: -0.2, max: 0.2, step: 0.01, range: true }),
+        '</div>'
+      ].join(''), true),
+      panel('', 'Fly you are measuring', [
+        sel('centerMode', 'Center', [['strike', 'Strike'], ['delta', 'Delta']]),
+        field('centerK', 'Center strike', { min: 2000, max: 9000, step: 1, range: true }),
+        '<div class="grid2">',
+        field('centerDelta', 'Center |delta|', { min: 0.05, max: 0.95, step: 0.01, range: true }),
+        sel('centerSide', 'Center side', [['call', 'Call'], ['put', 'Put']]),
+        '</div>',
+        sel('wingMode', 'Wing spacing', [['log', 'Percent from the forward'], ['strike', 'Points from the center'], ['delta', 'Fixed delta, such as 25Δ']]),
+        field('wingStrike', 'Wing width (points)', { min: 10, max: 500, step: 1, range: true }),
+        field('wingAsym', 'Upper wing extra (points)', { min: -80, max: 80, step: 1, range: true }),
+        field('wingLog', 'Wing width (log)', { min: 0.01, max: 0.2, step: 0.005, range: true }),
+        field('wingDelta', 'Wing |delta|', { min: 0.05, max: 0.45, step: 0.01, range: true }),
+        sel('deltaConv', 'Delta convention', [['forward', 'Forward delta'], ['spot', 'Spot delta'], ['premium', 'Premium-adjusted spot']]),
+        sel('flyQuote', 'Fly number in the header', [
+          ['raw', 'On the wings selected above'],
+          ['atm', 'Around ATM, at the wing delta'],
+          ['d25', '25Δ butterfly'],
+          ['dn', 'Forward-delta butterfly']
+        ]),
+        '<p class="muted">The fly number is a volatility gap, not the price of the option package.</p>'
+      ].join(''), true),
+      panel('', 'Option package', [
+        sel('strategy', 'Structure', [
+          ['long_call', 'Long call fly +1 / −2 / +1'],
+          ['short_call', 'Short call fly'],
+          ['long_put', 'Long put fly'],
+          ['short_put', 'Short put fly'],
+          ['broken_call', 'Broken-wing call (1.6× / 0.7×)'],
+          ['dn_call', 'Delta-neutral call'],
+          ['dn_put', 'Delta-neutral put']
+        ]),
+        sel('priceConvention', 'Price weights', [
+          ['normalized', 'Half / −1 / half'],
+          ['unnormalized', '1 / −2 / 1'],
+          ['custom', 'Custom weights']
+        ]),
+        '<div class="grid2">',
+        field('tradeQty', 'Quantity', { min: 1, max: 100, step: 1, range: true }),
+        field('multiplier', 'Multiplier', { min: 1, max: 100, step: 1, range: false }),
+        field('spreadPct', 'Half-spread %', { min: 0, max: 10, step: 0.1, range: true }),
+        field('slippage', 'Slippage', { min: 0, max: 2, step: 0.01, range: true }),
+        field('fee', 'Fee per contract', { min: 0, max: 5, step: 0.05, range: true }),
+        '</div>',
+        '<div class="field"><label>Entry premium (blank uses the baseline mid)</label><input type="number" id="entryPremium" step="0.01" /></div>',
+        sel('sticky', 'When spot moves, volatility', [['moneyness', 'Stays at the same moneyness'], ['strike', 'Stays at the same strike']])
+      ].join(''), false),
+      panel('panelShocks', 'Shocks and presets', [
+        '<p class="muted">Each slider is one experiment. Preset K replays a real down day onto today’s smile.</p>',
+        field('dS', 'Spot %', { min: -20, max: 20, step: 0.1, range: true }),
+        field('dAtm', 'ATM vol points', { min: -10, max: 15, step: 0.1, range: true }),
+        field('dPut', 'Put skew', { min: -8, max: 8, step: 0.1, range: true }),
+        field('dCall', 'Call skew', { min: -8, max: 8, step: 0.1, range: true }),
+        field('dCurv', 'Curvature', { min: -4, max: 4, step: 0.1, range: true }),
+        field('dWing', 'Wing', { min: -3, max: 3, step: 0.1, range: true }),
+        field('dDays', 'Days', { min: -40, max: 40, step: 1, range: true }),
+        field('drBps', 'Rate (bp)', { min: -100, max: 100, step: 1, range: true }),
+        field('dqBps', 'Dividend (bp)', { min: -50, max: 50, step: 1, range: true }),
+        field('dWidthStrike', 'Strike width', { min: -50, max: 50, step: 1, range: true }),
+        field('dWidthLog', 'Log width', { min: -0.05, max: 0.05, step: 0.005, range: true }),
+        field('dWidthDelta', 'Delta width', { min: -0.1, max: 0.1, step: 0.01, range: true }),
+        field('dCenterDelta', 'Center delta', { min: -0.2, max: 0.2, step: 0.01, range: true }),
+        field('dCost', 'Extra slippage', { min: 0, max: 1, step: 0.01, range: true }),
+        '<div class="row" id="presetRow"></div>',
+        '<div class="field" style="margin-top:8px;"><label>Name for a saved case</label><input type="text" id="scName" value="Case 1" /></div>',
+        '<button class="btn sm primary" id="saveSc" type="button">Save this case</button>'
+      ].join(''), false),
+      panel('panelDials', 'Greek dials', [
+        '<p class="muted">Move one dial to change that Greek alone. Move several to see the closest combination. The gap is the part the smile cannot reach.</p>',
+        '<div class="grid2">',
+        F.GREEK_DIALS.map((d) => field('gd_' + d.key, d.label, { min: d.min, max: d.max, step: d.step, range: true })).join(''),
+        '</div>',
+        '<div id="dialFit"></div>'
+      ].join(''), false),
+      panel('panelHeat', 'Heatmap axes', [
+        sel('heatX', 'Horizontal', [['S', 'Spot'], ['atm', 'ATM volatility'], ['putSkew', 'Put skew'], ['curvature', 'Curvature'], ['width', 'Wing width'], ['days', 'Days'], ['centerDelta', 'Center delta']]),
+        sel('heatY', 'Vertical', [['atm', 'ATM volatility'], ['S', 'Spot'], ['putSkew', 'Put skew'], ['curvature', 'Curvature'], ['width', 'Wing width'], ['days', 'Days']]),
+        sel('heatM', 'Color', [['ivFly', 'IV fly'], ['priceFly', 'Price fly'], ['premium', 'Package premium'], ['pnl', 'P&L versus entry'], ['delta', 'Delta'], ['gamma', 'Gamma'], ['vega', 'Vega']])
+      ].join(''), false)
     ].join('');
 
     document.querySelectorAll('#controls input[type=range]').forEach((range) => {
@@ -304,7 +336,7 @@
       el.addEventListener('change', () => onEdit(el.id));
     });
     document.getElementById('presetRow').innerHTML = F.presets(history).map((p) =>
-      '<button class="btn sm" type="button" data-preset="' + p.id + '">' + esc(p.id) + '</button>'
+      '<button class="btn sm" type="button" data-preset="' + p.id + '" title="' + esc(p.note || p.name) + '">' + esc(p.name) + '</button>'
     ).join('');
     document.getElementById('presetRow').addEventListener('click', (ev) => {
       const id = ev.target.getAttribute('data-preset');
@@ -353,6 +385,7 @@
     } else if (id !== 'scName') {
       state.linkedToFinal = false;
     }
+    if (id === 'centerMode' || id === 'wingMode') syncPanels();
     schedule();
   }
 
@@ -404,7 +437,7 @@
   function chartHeight() {
     const stack = document.getElementById('chartStack') || document.getElementById('chart');
     const top = stack.getBoundingClientRect().top;
-    const note = document.getElementById('chartNote');
+    const note = document.getElementById('chartAbout') || document.getElementById('chartNote');
     const noteH = note ? note.offsetHeight + 8 : 28;
     const fly = document.getElementById('flyPanel');
     const flyH = fly ? 280 : 0;
@@ -945,7 +978,7 @@
       ['IV fly', Number.isFinite(fly) ? (fly * 100).toFixed(2) + ' pts' : '—'],
       ['Class', cls]
     ].map((p) => '<span class="pill">' + p[0] + ' <strong class="' + (p[0] === 'Class' ? cls : '') + '">' + esc(p[1]) + '</strong></span>').join('');
-    document.getElementById('banner').textContent = view.label + ' Positive residual = expensive curvature. Cheap ≠ buy.';
+    document.getElementById('banner').textContent = view.label + ' · A positive residual means the fly looks expensive. Cheap is not a buy.';
 
     const sc = view.scores;
     const rail = [];
@@ -1061,13 +1094,17 @@
 
   function buildChartChrome() {
     document.getElementById('chartTabs').innerHTML = CHARTS.map((c) =>
-      '<button type="button" data-c="' + c[0] + '"' + (c[0] === chartId ? ' class="active"' : '') + '>' + c[1] + '</button>'
+      '<button type="button" data-c="' + c[0] + '" title="' + esc(c[2]) + '"' + (c[0] === chartId ? ' class="active"' : '') + '>' + c[1] + '</button>'
     ).join('');
     document.getElementById('chartTabs').onclick = (ev) => {
       const id = ev.target.getAttribute('data-c');
       if (!id) return;
       chartId = id;
       document.querySelectorAll('#chartTabs button').forEach((b) => b.classList.toggle('active', b.getAttribute('data-c') === id));
+      if (id === 'heat') { const p = document.getElementById('panelHeat'); if (p) p.open = true; }
+      if (id === 'gmix' || id === 'greeks') { const p = document.getElementById('panelDials'); if (p) p.open = true; }
+      if (id === 'attr' || id === 'payoff') { const p = document.getElementById('panelShocks'); if (p) p.open = true; }
+      syncPanels();
       schedule();
     };
     document.getElementById('viewTools').innerHTML =
@@ -1086,7 +1123,7 @@
       '<button class="btn sm primary" type="button" id="pinBtn" title="Freeze these curves on the same chart, then move the controls">Pin overlay</button>' +
       '<button class="btn sm" type="button" id="closePin" style="display:none" title="Remove the pinned curves">Clear pin</button>' +
       '<span class="pin-delta" id="pinDelta"></span>' +
-      '<span class="hint">Scroll zooms · drag a box · double-click resets · + / − / 0</span>';
+      '<span class="hint">Scroll zooms · double-click resets</span>';
     document.getElementById('zoomIn').onclick = () => zoomAxes(0.8, 0.8);
     document.getElementById('zoomOut').onclick = () => zoomAxes(1.25, 1.25);
     document.getElementById('zoomYIn').onclick = () => zoomAxes(null, 0.72);
@@ -1111,11 +1148,13 @@
       if (mode) setDrag(mode);
     });
     document.getElementById('chartTools').innerHTML =
-      '<label class="muted">Greek <select id="greekName"><option>delta</option><option>gamma</option><option>vega</option><option>theta</option><option>rho</option><option>vanna</option><option>vomma</option><option>charm</option><option>color</option><option>speed</option></select></label>' +
-      '<button class="btn sm" id="csvBtn" type="button">Export CSV</button>' +
-      '<button class="btn sm" id="pngBtn" type="button">Export PNG</button>' +
-      '<button class="btn sm" id="histCsv" type="button">Export history</button>' +
-      '<button class="btn sm" id="chainCsv" type="button">Sample chain CSV</button>';
+      '<label class="muted" id="greekPick">Greek <select id="greekName"><option>delta</option><option>gamma</option><option>vega</option><option>theta</option><option>rho</option><option>vanna</option><option>vomma</option><option>charm</option><option>color</option><option>speed</option></select></label>' +
+      '<details class="export"><summary>Download</summary><div class="row" id="exportRow">' +
+      '<button class="btn sm" id="csvBtn" type="button">This chart</button>' +
+      '<button class="btn sm" id="pngBtn" type="button">PNG</button>' +
+      '<button class="btn sm" id="histCsv" type="button">History</button>' +
+      '<button class="btn sm" id="chainCsv" type="button">Sample chain</button>' +
+      '</div></details>';
     document.getElementById('greekName').onchange = () => schedule();
     document.getElementById('csvBtn').onclick = () => download('fly-chart.csv', toCSV(window.__csv || []));
     document.getElementById('pngBtn').onclick = () => { if (window.Plotly) Plotly.downloadImage('chart', { format: 'png', filename: 'spx-fly' }); };
@@ -1143,8 +1182,9 @@
       };
       reader.readAsText(file);
     };
-    document.getElementById('chartTools').appendChild(btn);
-    document.getElementById('chartTools').appendChild(imp);
+    document.getElementById('exportRow').appendChild(btn);
+    document.getElementById('exportRow').appendChild(imp);
+    syncPanels();
   }
 
   function toCSV(rows) {

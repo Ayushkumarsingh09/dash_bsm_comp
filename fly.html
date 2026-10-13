@@ -47,16 +47,36 @@ button, input, select, textarea { font: inherit; color: inherit; }
   font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin: 8px 0;
 }
 .side { max-height: calc(100vh - 118px); overflow: auto; padding-right: 4px; }
+.stick-actions { position: sticky; top: 0; z-index: 2; background: var(--bg2); padding-bottom: 8px; }
+.howto { font-size: 12px; color: var(--muted); margin: 0 0 8px; }
+.panel { border: 1px solid var(--border); border-radius: 6px; margin-bottom: 8px; background: var(--bg3); }
+.panel > summary {
+  cursor: pointer; padding: 8px 10px; font-size: 11px; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--text); list-style: none;
+}
+.panel > summary::-webkit-details-marker { display: none; }
+.panel > summary::before { content: "▸  "; color: var(--accent2); }
+.panel[open] > summary::before { content: "▾  "; }
+.panel .body { padding: 0 8px 8px; }
+.field[hidden], #greekPick[hidden] { display: none; }
 main.stage { display: flex; flex-direction: column; min-height: calc(100vh - 118px); }
 .field { display: flex; flex-direction: column; gap: 2px; margin-bottom: 6px; }
 .field label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
-.field .pair { display: flex; gap: 6px; }
-.field input[type="range"] { flex: 1; }
+.field .pair { display: flex; gap: 6px; align-items: center; }
+.field input[type="range"] { flex: 1; min-width: 0; }
+.field .pair input[type="number"] { width: 78px; flex: 0 0 78px; }
 .field input[type="number"], .field input[type="text"], .field select, textarea {
   background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 4px 6px; font-family: var(--mono); width: 100%;
 }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+.tabs.charts { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; }
+.tabs.charts button { white-space: nowrap; flex: 0 0 auto; }
+.note { margin-top: 6px; color: var(--muted); font-size: 12px; }
+.note summary { cursor: pointer; color: var(--accent2); }
+.export { margin-left: auto; }
+.export summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+.export .row { margin-top: 4px; }
 .tabs button, .btn {
   background: var(--bg4); border: 1px solid var(--border2); color: var(--text);
   border-radius: 4px; padding: 5px 8px; cursor: pointer;
@@ -110,15 +130,18 @@ summary { cursor: pointer; color: var(--accent2); }
 <div class="layout">
   <aside class="card side" id="controls"></aside>
   <main class="card stage">
-    <div class="tabs" id="chartTabs"></div>
+    <div class="tabs charts" id="chartTabs"></div>
     <div class="row" id="chartTools" style="margin-bottom:4px;"></div>
     <div class="row viewbar" id="viewTools"></div>
     <div id="chartStack" class="chart-stack">
       <div id="chart" class="chart"></div>
     </div>
-    <p class="muted" id="chartNote" style="margin-top:6px;"></p>
+    <details class="note" id="chartAbout">
+      <summary>About this chart</summary>
+      <p class="muted" id="chartNote"></p>
+    </details>
     <div id="flyPanel" class="fly-panel">
-      <h3>Fly</h3>
+      <h3>Fly on this smile</h3>
       <div id="flyValues" class="fly-values"></div>
       <div id="flyChart" class="fly-chart"></div>
     </div>
