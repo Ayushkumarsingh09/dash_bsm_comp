@@ -1096,11 +1096,7 @@
     return _history;
   }
 
-  function linkToFinal(state, history) {
-    const h = history || getHistory();
-    const day = h.days[h.days.length - 1];
-    const linked = stateFromDay(day);
-    linked.linkedToFinal = true;
+  function copySessionControls(linked, state, day) {
     linked.centerMode = state.centerMode;
     linked.centerK = state.centerMode === 'strike' ? forward(linked) : state.centerK;
     linked.centerDelta = state.centerDelta;
@@ -1121,6 +1117,56 @@
     linked.shocks = zeroShocks();
     linked.asOf = day.date;
     return linked;
+  }
+
+  function linkToSession(state, history, index) {
+    const h = history || getHistory();
+    const i = Math.max(0, Math.min(index | 0, h.days.length - 1));
+    const day = h.days[i];
+    const linked = stateFromDay(day);
+    linked.sessionIndex = i;
+    linked.viewWarmup = false;
+    linked.linkedToFinal = i === h.days.length - 1;
+    return copySessionControls(linked, state, day);
+  }
+
+  function linkToWarmup(state, history, index) {
+    const h = history || getHistory();
+    const i = Math.max(0, Math.min(index | 0, Math.max(0, h.warmup.length - 1)));
+    const day = h.warmup[i];
+    const linked = stateFromDay(day);
+    linked.sessionIndex = null;
+    linked.viewWarmup = true;
+    linked.linkedToFinal = false;
+    return copySessionControls(linked, state, day);
+  }
+
+  function linkToFinal(state, history) {
+    const h = history || getHistory();
+    return linkToSession(state, h, h.days.length - 1);
+  }
+
+  function sessionBoard(history) {
+    const h = history || getHistory();
+    if (h._sessionBoard) return h._sessionBoard;
+    const quote = (day, index, warmup) => {
+      const s = stateFromDay(day);
+      const marks = brokerMarks(s);
+      let bf25 = NaN, rr25 = NaN, bf10 = NaN, rr10 = NaN;
+      for (const m of marks) {
+        if (Math.abs(m.delta - 0.25) < 1e-9) { bf25 = m.bf; rr25 = m.rr; }
+        if (Math.abs(m.delta - 0.10) < 1e-9) { bf10 = m.bf; rr10 = m.rr; }
+      }
+      return {
+        index, warmup: !!warmup, date: day.date, S: day.S,
+        atm: ivAt(s, forward(s)).iv,
+        bf25, rr25, bf10, rr10,
+        dteLo: day.dteLo, dteHi: day.dteHi
+      };
+    };
+    const rows = h.warmup.map((day, i) => quote(day, i, true)).concat(h.days.map((day, i) => quote(day, i, false)));
+    h._sessionBoard = rows;
+    return rows;
   }
 
   function flyOnDay(day, kL, kC, kU) {
@@ -1155,6 +1201,8 @@
   }
 
   function referenceIndex(state, history) {
+    if (state.viewWarmup) return 0;
+    if (isNum(state.sessionIndex)) return Math.max(0, Math.min(state.sessionIndex, history.days.length));
     if (state.linkedToFinal) return history.days.length - 1;
     return history.days.length;
   }
@@ -2755,7 +2803,7 @@
     yearFrac, forward, ensureT, shapeIV, materialize, ivAt, bsm, impliedVol,
     strikeForDelta, signedDelta, deltaAbs, resolveWings, ivFlyOf, priceFly, priceOf,
     unitLegs, packagePoints, payoff, payoffLimits, breakevens, extrema, greeksOf,
-    fitSVI, fitSSVI, varianceInterp, varianceBlend, getHistory, resetHistory, linkToFinal, stateFromDay, ingestMarketHistory,
+    fitSVI, fitSSVI, varianceInterp, varianceBlend, getHistory, resetHistory, linkToFinal, linkToSession, linkToWarmup, sessionBoard, stateFromDay, ingestMarketHistory,
     assess, decompose, attributeScenario, arbitrageReport, metricOn,
     smileSeries, deltaSmile, brokerMarks, flyCurve, flySweepStrike, flySweepDelta, flySweepWidth, priceFlySweep,
     payoffSeries, greekSeries, greekMove, GREEK_DIALS, zeroGreekDials, solveGreekDials,

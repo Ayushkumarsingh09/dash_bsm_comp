@@ -418,6 +418,39 @@
       assert(!Number.isFinite(far.iv), 'outside the listed strikes stays blank');
     });
 
+    test('a chosen session is scored only against earlier days', () => {
+      const h = F.getHistory();
+      const s = F.linkToSession(F.defaultState(), h, 40);
+      s.quoteGrid = null;
+      const a = F.assess(s, h);
+      assert(a.refN === 40, 'ref ' + a.refN);
+      const later = h.days[80];
+      const saved = later.iv.slice();
+      later.iv = later.iv.map((v) => v + 0.05);
+      const b = F.assess(s, h);
+      later.iv = saved;
+      near(a.methods[0].percentile, b.methods[0].percentile, 1e-12, 'future leaked');
+    });
+
+    test('a warm-up session stays out of the valuation scores', () => {
+      const h = F.getHistory();
+      const s = F.linkToWarmup(F.defaultState(), h, 3);
+      const a = F.assess(s, h);
+      assert(s.viewWarmup, 'flag');
+      assert(a.refN === 0, 'ref ' + a.refN);
+    });
+
+    test('the session board quotes every day once', () => {
+      const h = F.getHistory();
+      const board = F.sessionBoard(h);
+      assert(board.length === h.warmup.length + h.days.length, 'rows ' + board.length);
+      const last = board[board.length - 1];
+      assert(last.date === h.days[h.days.length - 1].date && !last.warmup, 'last');
+      assert(Number.isFinite(last.bf25) && Number.isFinite(last.rr25) && Number.isFinite(last.bf10), 'quotes');
+      near(last.bf25, h.days[h.days.length - 1].fly25, 1e-8, '25 delta butterfly');
+      assert(F.sessionBoard(h) === board, 'cached');
+    });
+
     test('ingested market history does not replace the synthetic study', () => {
       const ks = F.kGrid();
       const sessions = [];

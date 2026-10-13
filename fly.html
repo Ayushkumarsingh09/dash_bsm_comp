@@ -45,6 +45,13 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .bookbar .active { border-color: var(--accent2); color: var(--accent2); }
 #bookNote { flex: 1 1 280px; }
+#dayPick, #dayFind {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
+  padding: 4px 6px; font-family: var(--mono); color: var(--text);
+}
+#dayPick { max-width: 148px; }
+#dayFind { width: 118px; }
+tr.open-day td { background: #1a2030; }
 .layout { display: grid; grid-template-columns: 300px minmax(0, 1fr) 300px; gap: 10px; padding: 10px 14px 12px; align-items: stretch; }
 @media (max-width: 1180px) { .layout { grid-template-columns: 1fr; } }
 .card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; }
@@ -138,6 +145,17 @@ summary { cursor: pointer; color: var(--accent2); }
   <button class="btn sm active" id="bookSyn" type="button">Synthetic sample</button>
   <button class="btn sm" id="bookReal" type="button">Real SNP chains</button>
   <span class="muted" id="bookNote">Synthetic 252-day study. The listed chains are not mixed into it.</span>
+</section>
+<section class="card bookbar" id="dayBar">
+  <strong>Days</strong>
+  <button class="btn sm" id="dayPrev" type="button">Previous</button>
+  <select id="dayPick" aria-label="Session date"></select>
+  <button class="btn sm" id="dayNext" type="button">Next</button>
+  <button class="btn sm" id="dayLast" type="button">Latest</button>
+  <label class="muted">Find <input id="dayFind" type="text" placeholder="date" /></label>
+  <button class="btn sm" id="dayAll" type="button">All days</button>
+  <button class="btn sm" id="dayClear" type="button">Clear compare</button>
+  <span class="muted" id="dayMeta"></span>
 </section>
 <div class="layout">
   <aside class="card side" id="controls"></aside>

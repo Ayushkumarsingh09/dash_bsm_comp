@@ -4,6 +4,10 @@
   let realHistory = null;
   let bookId = 'synthetic';
   let bookToken = 0;
+  let compareSet = [];
+  let bottomTab = 'methods';
+  let dayBarKey = '';
+  const DAY_COLORS = ['#f472b6', '#38bdf8', '#facc15', '#a3e635', '#fb7185', '#c4b5fd'];
   let state = F.linkToFinal(F.defaultState(), history);
   state.greekDials = F.zeroGreekDials();
   let liveFit = null;
@@ -613,34 +617,101 @@
     };
   }
 
+  function compareItems() {
+    const out = [];
+    for (const key of compareSet) {
+      const warmup = key.charAt(0) === 'w';
+      const index = parseInt(key.slice(2), 10);
+      const pool = warmup ? history.warmup : history.days;
+      const day = pool && pool[index];
+      if (day) out.push({ key, day, warmup, index });
+    }
+    return out;
+  }
+  function openSession(index, warmup) {
+    pinnedState = null;
+    paintSerial += 1;
+    state = warmup ? F.linkToWarmup(state, history, index) : F.linkToSession(state, history, index);
+    state.greekDials = F.zeroGreekDials();
+    state.source = history.synthetic === false ? 'market' : 'synthetic';
+    write();
+    render();
+  }
+  function toggleCompare(key) {
+    const at = compareSet.indexOf(key);
+    if (at >= 0) compareSet.splice(at, 1);
+    else if (compareSet.length < 6) compareSet.push(key);
+    render();
+  }
+  function smileOf(day) {
+    const x = [], y = [];
+    for (let i = 0; i < day.ks.length; i++) {
+      if (typeof day.iv[i] === 'number' && Number.isFinite(day.iv[i])) {
+        x.push(day.ks[i]);
+        y.push(day.iv[i] * 100);
+      }
+    }
+    return { x, y };
+  }
+  function flyOfK(s) {
+    const rows = F.flyCurve(s);
+    const fwd = F.forward(F.materialize(s));
+    return {
+      x: rows.map((r) => Math.log(r.K / fwd)),
+      y: rows.map((r) => r.fly * 100)
+    };
+  }
+
   function renderChart(view) {
     if (chartId === 'smile') {
       const s = F.smileSeries(state, history);
-      const xs = s.rows.map((r) => r.K);
+      const compared = compareItems().filter((item) => item.day.date !== state.asOf);
+      const useK = compared.length > 0;
+      const fwd = F.forward(state);
+      const xs = s.rows.map((r) => useK ? r.k : r.K);
       const traces = [
-        line('Scenario / market', xs, s.rows.map((r) => r.market * 100), '#e6edf7'),
+        line(state.asOf || 'This session', xs, s.rows.map((r) => r.market * 100), '#e6edf7'),
         line('Baseline', xs, s.rows.map((r) => r.baseline * 100), '#8b95a8', 'dot'),
         line('Quadratic smooth (bump off)', xs, s.quadratic.map((v) => v * 100), '#2dd4bf', 'dash')
       ];
       if (s.svi.ok) traces.push(line('SVI fit', xs, s.rows.map((r) => s.svi.iv(r.k) * 100), '#f59e0b'));
       if (s.ssvi.ok) traces.push(line('SSVI fit', xs, s.rows.map((r) => s.ssvi.iv(r.k) * 100), '#a78bfa'));
+      compared.forEach((item, i) => {
+        const sm = smileOf(item.day);
+        traces.push(line(item.day.date + (item.warmup ? ' warm-up' : ''), sm.x, sm.y, DAY_COLORS[i % DAY_COLORS.length], 'dash'));
+      });
+      const wingX = [view.wings.Kl, view.wings.Kc, view.wings.Ku].map((K) => useK && K > 0 ? Math.log(K / fwd) : K);
       traces.push({
         type: 'scatter', mode: 'markers', name: 'Wings / center',
-        x: [view.wings.Kl, view.wings.Kc, view.wings.Ku],
+        x: wingX,
         y: [view.wings.ivL, view.wings.ivC, view.wings.ivU].map((v) => v * 100),
         marker: { size: 10, color: ['#7dd3fc', '#f59e0b', '#fca5a5'] }
       });
-      const smileLay = layout('Implied volatility vs strike', 'IV (vol points)', 'Strike');
+      const smileLay = layout(
+        useK ? 'Compared smiles vs log-moneyness' : 'Implied volatility vs strike',
+        'IV (vol points)',
+        useK ? 'k = ln(K/F)' : 'Strike'
+      );
       const marks = F.brokerMarks(state);
-      addBrokerGeometry(traces, smileLay, marks, (m, side) => side === 'put' ? m.Kl : side === 'call' ? m.Ku : m.Kc);
+      addBrokerGeometry(traces, smileLay, marks, (m, side) => {
+        const K = side === 'put' ? m.Kl : side === 'call' ? m.Ku : m.Kc;
+        return useK && K > 0 ? Math.log(K / fwd) : K;
+      });
       draw(traces, smileLay,
+        (useK ? 'Checked days share log-moneyness, so a different spot does not shift the smile. Dashed curves are the other sessions. ' : '') +
         'The red chord joins the 10Δ or 25Δ put to the matching call. BF is the vol-point gap from that chord down to the center. RR is call-wing vol minus put-wing vol. These are smile quotes, not the package debit. |k|>0.30 is outside the quoted grid.',
         xs.map((x, i) => [x, s.rows[i].market, s.rows[i].baseline]));
     } else if (chartId === 'delta') {
       const rows = F.deltaSmile(state);
       const traces = [
-        line('OTM IV vs signed delta', rows.map((r) => r.delta), rows.map((r) => r.iv * 100), '#e6edf7')
+        line(state.asOf || 'This session', rows.map((r) => r.delta), rows.map((r) => r.iv * 100), '#e6edf7')
       ];
+      compareItems().filter((item) => item.day.date !== state.asOf).forEach((item, i) => {
+        const other = F.stateFromDay(item.day);
+        other.deltaConv = state.deltaConv;
+        const alt = F.deltaSmile(other);
+        traces.push(line(item.day.date, alt.map((r) => r.delta), alt.map((r) => r.iv * 100), DAY_COLORS[i % DAY_COLORS.length], 'dash'));
+      });
       const deltaLay = layout('Implied volatility vs ' + state.deltaConv + ' delta', 'IV (vol points)', 'Signed delta (put < 0 < call)');
       addBrokerGeometry(traces, deltaLay, F.brokerMarks(state), (m, side) => side === 'put' ? m.putDelta : side === 'call' ? m.callDelta : 0);
       draw(traces, deltaLay,
@@ -742,12 +813,34 @@
       }], layout(hmap.metric + ' heatmap', hmap.yLabel, hmap.xLabel), hmap.note, []);
     } else if (chartId === 'hist') {
       const hch = F.historyChart(state, history);
-      draw([
+      const histTraces = [
         line('Daily fly (vol pts)', hch.dates, hch.fly.map((v) => v * 100), '#3d9cf0'),
         line('63-session median', hch.dates, hch.roll.map((v) => v * 100), '#22c55e'),
         line('Robust z', hch.dates, hch.z, '#f59e0b'),
         line('Next 5-session spot return', hch.dates, hch.outcome5d, '#fca5a5', 'dot')
-      ], layout('One-year 60-DTE fly', 'Vol points, z, or return', 'Session'),
+      ];
+      const openI = state.viewWarmup ? -1 : (Number.isFinite(state.sessionIndex) ? state.sessionIndex : hch.dates.length - 1);
+      if (openI >= 0 && openI < hch.dates.length) {
+        histTraces.push({
+          type: 'scatter', mode: 'markers', name: 'Open day',
+          x: [hch.dates[openI]], y: [hch.fly[openI] * 100],
+          marker: { size: 12, color: '#e6edf7', symbol: 'diamond' }
+        });
+      }
+      const cmpX = [], cmpY = [];
+      compareItems().forEach((item) => {
+        if (item.warmup) return;
+        cmpX.push(hch.dates[item.index]);
+        cmpY.push(hch.fly[item.index] * 100);
+      });
+      if (cmpX.length) {
+        histTraces.push({
+          type: 'scatter', mode: 'markers', name: 'Compared',
+          x: cmpX, y: cmpY,
+          marker: { size: 9, color: '#f472b6', symbol: 'circle-open', line: { width: 2, color: '#f472b6' } }
+        });
+      }
+      draw(histTraces, layout('One-year 60-DTE fly', 'Vol points, z, or return', 'Session'),
         hch.note + ' Sample size ' + hch.dates.length + '. Warm-up is excluded.',
         hch.dates.map((d, i) => [d, hch.fly[i], hch.z[i], hch.outcome5d[i]]));
     } else {
@@ -913,27 +1006,49 @@
       flyChip('Fwd Δ', vol(q.dn)),
       flyChip('Price', Number.isFinite(price) ? F.fmt(price, 2) + ' pts' : '—')
     ];
+    const compared = compareItems().filter((item) => item.day.date !== state.asOf);
+    const useK = compared.length > 0;
     const liveRows = F.flyCurve(liveState);
-    const traces = [line('Live IV fly', liveRows.map((r) => r.K), liveRows.map((r) => r.fly * 100), '#e6edf7')];
+    const liveK = useK ? flyOfK(liveState) : null;
+    const traces = [line(state.asOf || 'This session', useK ? liveK.x : liveRows.map((r) => r.K), useK ? liveK.y : liveRows.map((r) => r.fly * 100), '#e6edf7')];
     function rawOf(s) {
       return F.ivFlyOf(F.resolveWings(F.materialize(s)));
     }
     if (baseState) {
       const d = (q.raw - rawOf(baseState)) * 100;
       chips.push(flyChip('vs dials off', signedPts(d)));
-      const rows = F.flyCurve(baseState);
-      traces.push(line('Before dials', rows.map((r) => r.K), rows.map((r) => r.fly * 100), '#8b95a8', 'dash'));
+      const rows = useK ? flyOfK(baseState) : null;
+      const raw = F.flyCurve(baseState);
+      traces.push(line('Before dials', useK ? rows.x : raw.map((r) => r.K), useK ? rows.y : raw.map((r) => r.fly * 100), '#8b95a8', 'dash'));
     }
     if (pinState) {
       const d = (q.raw - rawOf(pinState)) * 100;
       chips.push(flyChip('vs pin', signedPts(d)));
-      const rows = F.flyCurve(pinState);
-      traces.push(line('Pinned', rows.map((r) => r.K), rows.map((r) => r.fly * 100), '#f59e0b', 'dash'));
+      const rows = useK ? flyOfK(pinState) : null;
+      const raw = F.flyCurve(pinState);
+      traces.push(line('Pinned', useK ? rows.x : raw.map((r) => r.K), useK ? rows.y : raw.map((r) => r.fly * 100), '#f59e0b', 'dash'));
     }
+    compared.forEach((item, i) => {
+      const other = F.stateFromDay(item.day);
+      other.centerMode = state.centerMode;
+      other.centerK = state.centerMode === 'strike' ? F.forward(other) : state.centerK;
+      other.centerDelta = state.centerDelta;
+      other.centerSide = state.centerSide;
+      other.wingMode = state.wingMode;
+      other.wingStrike = state.wingStrike;
+      other.wingAsym = state.wingAsym;
+      other.wingLog = state.wingLog;
+      other.wingAsymLog = state.wingAsymLog;
+      other.wingDelta = state.wingDelta;
+      other.deltaConv = state.deltaConv;
+      const rows = flyOfK(other);
+      traces.push(line(item.day.date, rows.x, rows.y, DAY_COLORS[i % DAY_COLORS.length], 'dash'));
+    });
     if (view.wings && Number.isFinite(view.wings.Kc) && Number.isFinite(q.raw)) {
+      const fwd = F.forward(liveState);
       traces.push({
         type: 'scatter', mode: 'markers', name: 'This center',
-        x: [view.wings.Kc], y: [q.raw * 100],
+        x: [useK ? Math.log(view.wings.Kc / fwd) : view.wings.Kc], y: [q.raw * 100],
         marker: { size: 11, color: '#2dd4bf' }
       });
     }
@@ -942,7 +1057,7 @@
       el.innerHTML = '<p class="muted">Plotly failed to load.</p>';
       return;
     }
-    const lay = layout('IV fly vs center strike', 'IV fly (vol points)', 'Center strike');
+    const lay = layout(useK ? 'IV fly vs log-moneyness' : 'IV fly vs center strike', 'IV fly (vol points)', useK ? 'Center k = ln(K/F)' : 'Center strike');
     lay.height = 240;
     lay.margin = { l: 56, r: 12, t: 28, b: 40 };
     lay.title.font.size = 12;
@@ -975,16 +1090,30 @@
     const fly = selectedFly(view);
     const cls = view.scores.composite ? view.scores.composite.classification : 'insufficient';
     document.getElementById('pills').innerHTML = [
+      ['Session', state.asOf || '—'],
       ['Spot', F.fmt(view.work.S, 1)],
       ['ATM', (view.work.atm * 100).toFixed(2) + ' pts'],
       ['DTE', view.work.days.toFixed(0)],
       ['IV fly', Number.isFinite(fly) ? (fly * 100).toFixed(2) + ' pts' : '—'],
       ['Class', cls]
     ].map((p) => '<span class="pill">' + p[0] + ' <strong class="' + (p[0] === 'Class' ? cls : '') + '">' + esc(p[1]) + '</strong></span>').join('');
-    document.getElementById('banner').textContent = view.label + ' · A positive residual means the fly looks expensive. Cheap is not a buy.';
+    document.getElementById('banner').textContent = view.label + ' · Session ' + (state.asOf || '') +
+      (state.viewWarmup ? ' is warm-up and is not scored.' : ' · scores use only earlier sessions.') +
+      ' A positive residual means the fly looks expensive. Cheap is not a buy.';
 
     const sc = view.scores;
     const rail = [];
+    if (compareItems().length) {
+      const board = F.sessionBoard(history);
+      const pts = (v) => Number.isFinite(v) ? (v * 100).toFixed(2) : '—';
+      rail.push('<h3>Compared sessions</h3>');
+      rail.push('<table><tbody>' + compareItems().map((item) => {
+        const row = board.find((r) => r.warmup === item.warmup && r.index === item.index);
+        if (!row) return '';
+        return '<tr><td>' + row.date + '</td><td>' + pts(row.bf25) + ' / ' + pts(row.rr25) + '</td></tr>';
+      }).join('') + '</tbody></table>');
+      rail.push('<p class="muted">25Δ butterfly / risk reversal, vol points. The smile and fly strip draw the same days on log-moneyness.</p>');
+    }
     rail.push('<h3>Valuation</h3>');
     rail.push('<div class="metric"><div class="k">Composite · ' + esc(cls) + '</div><div class="v ' + cls + '">' + F.fmt(sc.composite.z, 2) + ' z</div></div>');
     rail.push('<div class="metric"><div class="k">Raw IV fly</div><div class="v">' + (Number.isFinite(sc.yNow) ? (sc.yNow * 100).toFixed(2) : '—') + ' vol pts</div></div>');
@@ -1036,11 +1165,33 @@
     const legRows = (view.position && view.position.legs) ? view.position.legs : [];
     document.getElementById('bottom').innerHTML =
       '<div class="tabs" id="bottomTabs">' +
-      '<button class="active" data-b="methods">15 scores</button><button data-b="legs">Legs</button><button data-b="gmix">Greek mix</button><button data-b="attr">Interactions</button><button data-b="scen">Saved scenarios</button><button data-b="method">Methodology</button>' +
+      '<button data-b="days"' + (bottomTab === 'days' ? ' class="active"' : '') + '>All days</button>' +
+      '<button data-b="methods"' + (bottomTab === 'methods' ? ' class="active"' : '') + '>15 scores</button><button data-b="legs">Legs</button><button data-b="gmix">Greek mix</button><button data-b="attr">Interactions</button><button data-b="scen">Saved scenarios</button><button data-b="method">Methodology</button>' +
       '</div><div id="bottomBody"></div>';
     const body = document.getElementById('bottomBody');
     function showBottom(which) {
-      if (which === 'legs') {
+      if (which === 'days') {
+        const board = F.sessionBoard(history);
+        const q = (document.getElementById('dayFind').value || '').trim();
+        const pts = (v) => Number.isFinite(v) ? (v * 100).toFixed(2) : '—';
+        const shown = board.filter((r) => !q || String(r.date).indexOf(q) >= 0);
+        body.innerHTML = '<p class="muted">Open puts that session on every chart. Tick compare to draw it with the open session. Smiles share log-moneyness, so a different spot does not slide the curve. Warm-up rows are listed and are not scored. ' + shown.length + ' of ' + board.length + '.</p>' +
+          '<div class="scroll" style="max-height:460px"><table><thead><tr><th>Compare</th><th>Date</th><th>Role</th><th>Spot</th><th>ATM</th><th>25Δ BF</th><th>25Δ RR</th><th>10Δ BF</th><th>10Δ RR</th><th></th></tr></thead><tbody>' +
+          shown.map((r) => {
+            const key = (r.warmup ? 'w:' : 'v:') + r.index;
+            const open = (r.warmup && state.viewWarmup && r.date === state.asOf) || (!r.warmup && !state.viewWarmup && r.index === state.sessionIndex);
+            return '<tr class="' + (open ? 'open-day' : '') + '"><td><input type="checkbox" data-cmp="' + key + '"' + (compareSet.indexOf(key) >= 0 ? ' checked' : '') + ' /></td><td>' + r.date + '</td><td>' + (r.warmup ? 'warm-up' : 'valuation') + '</td><td>' + F.fmt(r.S, 1) + '</td><td>' + pts(r.atm) + '</td><td>' + pts(r.bf25) + '</td><td>' + pts(r.rr25) + '</td><td>' + pts(r.bf10) + '</td><td>' + pts(r.rr10) + '</td><td><button class="btn sm" type="button" data-open="' + key + '">Open</button></td></tr>';
+          }).join('') + '</tbody></table></div>';
+        body.querySelectorAll('[data-cmp]').forEach((box) => {
+          box.onchange = () => toggleCompare(box.getAttribute('data-cmp'));
+        });
+        body.querySelectorAll('[data-open]').forEach((btn) => {
+          btn.onclick = () => {
+            const key = btn.getAttribute('data-open');
+            openSession(parseInt(key.slice(2), 10), key.charAt(0) === 'w');
+          };
+        });
+      } else if (which === 'legs') {
         body.innerHTML = '<div class="scroll"><table><thead><tr><th>Type</th><th>Strike</th><th>Qty</th><th>IV</th><th>Mid</th><th>Delta</th><th>Vega / pt</th></tr></thead><tbody>' +
           (view.greeks ? view.greeks.perLeg.map((r) => '<tr><td>' + r.type + '</td><td>' + r.K.toFixed(2) + '</td><td>' + F.fmt(r.qty, 3) + '</td><td>' + (r.iv * 100).toFixed(2) + '</td><td>' + F.fmt(r.price, 2) + '</td><td>' + F.fmt(r.delta, 3) + '</td><td>' + F.fmt(r.vega / 100, 3) + '</td></tr>').join('') : '') +
           '</tbody></table></div>';
@@ -1075,13 +1226,15 @@
           '</tbody></table></div>';
       }
     }
-    showBottom('methods');
+    showBottom(bottomTab);
     document.getElementById('bottomTabs').onclick = (ev) => {
       const b = ev.target.getAttribute('data-b');
       if (!b) return;
+      bottomTab = b;
       document.querySelectorAll('#bottomTabs button').forEach((btn) => btn.classList.toggle('active', btn === ev.target));
       showBottom(b);
     };
+    renderDayBar();
     paintCharts(view);
     renderDialFit(liveFit);
     drawFlyPanel(view, liveBook, liveFit ? state : null, pinnedState ? pinBookState : null);
@@ -1201,6 +1354,40 @@
     a.click();
   }
 
+  function renderDayBar() {
+    const sel = document.getElementById('dayPick');
+    const key = (history.seed || '') + ':' + history.days.length + ':' + (history.days[0] ? history.days[0].date : '');
+    if (sel && dayBarKey !== key) {
+      dayBarKey = key;
+      sel.innerHTML = history.days.map((d, i) => '<option value="' + i + '">' + d.date + '</option>').join('');
+    }
+    if (sel && document.activeElement !== sel && !state.viewWarmup) {
+      const idx = Number.isFinite(state.sessionIndex) ? state.sessionIndex : history.days.length - 1;
+      sel.value = String(idx);
+    }
+    const meta = document.getElementById('dayMeta');
+    if (!meta) return;
+    const open = state.viewWarmup
+      ? 'Warm-up ' + state.asOf + ' is open. It is not in the scores.'
+      : 'Open ' + (state.asOf || 'latest') + '. Scores use only earlier sessions.';
+    const names = compareItems().map((item) => item.day.date);
+    const extra = names.length ? ' Comparing ' + names.join(', ') + '.' : ' Tick rows in All days to compare up to six.';
+    meta.textContent = open + ' ' + extra + (compareSet.length >= 6 ? ' Six is the limit.' : '');
+  }
+  function stepSession(dir) {
+    if (state.viewWarmup) {
+      const i = history.warmup.findIndex((d) => d.date === state.asOf);
+      const at = i < 0 ? 0 : i;
+      const next = at + dir;
+      if (next >= 0 && next < history.warmup.length) openSession(next, true);
+      else if (dir > 0 && history.days.length) openSession(0, false);
+      return;
+    }
+    const at = Number.isFinite(state.sessionIndex) ? state.sessionIndex : history.days.length - 1;
+    const next = at + dir;
+    if (next >= 0 && next < history.days.length) openSession(next, false);
+    else if (dir < 0 && history.warmup.length) openSession(history.warmup.length - 1, true);
+  }
   function bookNoteText() {
     if (bookId !== 'real') return 'Synthetic 252-day study. The listed chains are not mixed into it.';
     const day = history.days[history.days.length - 1];
@@ -1220,6 +1407,7 @@
   function applyBook(next, id) {
     history = next;
     bookId = id;
+    compareSet = [];
     pinnedState = null;
     paintSerial += 1;
     const keep = {
@@ -1284,6 +1472,25 @@
   };
   window.addEventListener('hashchange', syncBook);
   syncBook();
+  document.getElementById('dayPrev').onclick = () => stepSession(-1);
+  document.getElementById('dayNext').onclick = () => stepSession(1);
+  document.getElementById('dayLast').onclick = () => openSession(history.days.length - 1, false);
+  document.getElementById('dayPick').onchange = (ev) => openSession(parseInt(ev.target.value, 10), false);
+  document.getElementById('dayAll').onclick = () => {
+    bottomTab = 'days';
+    render();
+    const bottom = document.getElementById('bottom');
+    if (bottom) bottom.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  document.getElementById('dayClear').onclick = () => {
+    compareSet = [];
+    render();
+  };
+  document.getElementById('dayFind').oninput = () => {
+    bottomTab = 'days';
+    render();
+  };
+  renderDayBar();
   window.addEventListener('resize', () => {
     const el = plotEl();
     if (!window.Plotly || !el || !el.data) return;
