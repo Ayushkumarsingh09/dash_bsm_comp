@@ -369,6 +369,93 @@
     return { iv: Math.sqrt(w / t), extrapolated: false, stale: !!(a.stale || b.stale) };
   }
 
+  function pchipSlopes(xs, ys) {
+    const n = xs.length;
+    const h = [];
+    const d = [];
+    for (let i = 0; i < n - 1; i++) {
+      h[i] = xs[i + 1] - xs[i];
+      d[i] = (ys[i + 1] - ys[i]) / h[i];
+    }
+    const m = new Array(n);
+    if (n === 1) { m[0] = 0; return m; }
+    m[0] = d[0];
+    m[n - 1] = d[n - 2];
+    for (let i = 1; i < n - 1; i++) {
+      if (d[i - 1] * d[i] <= 0) m[i] = 0;
+      else {
+        const w1 = 2 * h[i] + h[i - 1];
+        const w2 = h[i] + 2 * h[i - 1];
+        m[i] = (w1 + w2) / (w1 / d[i - 1] + w2 / d[i]);
+      }
+    }
+    return m;
+  }
+
+  function hermite(xs, ys, slopes, x) {
+    let i = 1;
+    while (i < xs.length - 1 && xs[i] < x) i++;
+    const x0 = xs[i - 1];
+    const x1 = xs[i];
+    const h = x1 - x0;
+    if (!(h > 0)) return ys[i - 1];
+    const t = (x - x0) / h;
+    const t2 = t * t;
+    const t3 = t2 * t;
+    return (2 * t3 - 3 * t2 + 1) * ys[i - 1] + (t3 - 2 * t2 + t) * h * slopes[i - 1] +
+      (-2 * t3 + 3 * t2) * ys[i] + (t3 - t2) * h * slopes[i];
+  }
+
+  function knotPairs(xs, ys) {
+    const pts = [];
+    for (let i = 0; i < xs.length; i++) {
+      if (isNum(xs[i]) && isNum(ys[i])) pts.push([xs[i], ys[i]]);
+    }
+    pts.sort((a, b) => a[0] - b[0]);
+    const x = [];
+    const y = [];
+    for (let i = 0; i < pts.length; i++) {
+      if (x.length && Math.abs(pts[i][0] - x[x.length - 1]) < 1e-8) continue;
+      x.push(pts[i][0]);
+      y.push(pts[i][1]);
+    }
+    return { x, y };
+  }
+
+  function smoothCurve(xs, ys, n) {
+    const knots = knotPairs(xs, ys);
+    const x = knots.x;
+    const y = knots.y;
+    if (x.length < 2) return { x: x.slice(), y: y.slice() };
+    const slopes = pchipSlopes(x, y);
+    const count = Math.max(x.length, n | 0);
+    const xo = [];
+    const yo = [];
+    const seen = {};
+    function push(t) {
+      const key = t.toFixed(8);
+      if (seen[key]) return;
+      seen[key] = 1;
+      xo.push(t);
+      yo.push(hermite(x, y, slopes, t));
+    }
+    for (let i = 0; i < count; i++) push(x[0] + (x[x.length - 1] - x[0]) * i / (count - 1));
+    for (let i = 0; i < x.length; i++) push(x[i]);
+    const order = xo.map((v, i) => i).sort((a, b) => xo[a] - xo[b]);
+    return { x: order.map((i) => xo[i]), y: order.map((i) => yo[i]) };
+  }
+
+  function smoothVol(ks, ivs, n) {
+    const T = 60 / 365;
+    const w = [];
+    for (let i = 0; i < ivs.length; i++) w.push(isNum(ivs[i]) ? ivs[i] * ivs[i] * T : NaN);
+    const s = smoothCurve(ks, w, n);
+    return {
+      x: s.x,
+      y: s.y.map((v) => (v > 0 ? Math.sqrt(v / T) : NaN))
+    };
+  }
+
   function interpPin(pin, K) {
     if (K < pin[0].K || K > pin[pin.length - 1].K) return { iv: NaN, extrapolated: true };
     let lo = 0, hi = pin.length - 1;
@@ -424,7 +511,12 @@
 
   function signedDelta(s, K, type) {
     if (!isNum(ivAt(s, K).iv)) return NaN;
-    const g = bsm(s, K, type);
+    return signedDeltaWith(s, K, type, ivAt(s, K).iv);
+  }
+
+  function signedDeltaWith(s, K, type, iv) {
+    if (!isNum(iv)) return NaN;
+    const g = bsm(s, K, type, iv);
     if (s.deltaConv === 'forward') return g.delta * Math.exp(s.q * s.T);
     if (s.deltaConv === 'premium') return g.delta - g.price / s.S;
     return g.delta;
@@ -2859,6 +2951,7 @@
     fitSVI, fitSSVI, varianceInterp, varianceBlend, getHistory, resetHistory, linkToFinal, linkToSession, linkToWarmup, sessionBoard, stateFromDay, ingestMarketHistory,
     assess, decompose, attributeScenario, arbitrageReport, metricOn,
     smileSeries, deltaSmile, brokerMarks, flyCurve, flySweepStrike, flySweepDelta, flySweepWidth, priceFlySweep,
+    smoothCurve, smoothVol, signedDeltaWith,
     payoffSeries, greekSeries, greekMove, GREEK_DIALS, zeroGreekDials, solveGreekDials,
     heatmap, historyChart, presets, chainCSV, parseCSV, applyImport,
     quickCheck, view, fmt, businessDaysEnding, isBiz, kGrid

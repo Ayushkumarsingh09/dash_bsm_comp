@@ -426,6 +426,19 @@
   function line(name, x, y, color, dash) {
     return { type: 'scatter', mode: 'lines', name, x, y, line: { color, width: 2, dash: dash || 'solid' }, hovertemplate: '%{x:.4g}<br>%{y:.4g}<extra>' + name + '</extra>' };
   }
+  function smoothLine(name, x, y, color, dash) {
+    const xs = [];
+    const ys = [];
+    for (let i = 0; i < x.length; i++) {
+      if (typeof x[i] === 'number' && typeof y[i] === 'number' && Number.isFinite(x[i]) && Number.isFinite(y[i])) {
+        xs.push(x[i]);
+        ys.push(y[i]);
+      }
+    }
+    if (xs.length < 3) return line(name, x, y, color, dash);
+    const dense = F.smoothCurve(xs, ys, Math.max(120, xs.length * 6));
+    return line(name, dense.x, dense.y, color, dash);
+  }
 
   function finiteValues(arr) {
     const out = [];
@@ -448,7 +461,7 @@
     const note = document.getElementById('chartAbout') || document.getElementById('chartNote');
     const noteH = note ? note.offsetHeight + 8 : 28;
     const fly = document.getElementById('flyPanel');
-    const flyH = fly ? 280 : 0;
+    const flyH = fly ? 400 : 0;
     return Math.max(320, Math.round(window.innerHeight - top - noteH - flyH - 20));
   }
   function draw(traces, lay, note, csvRows) {
@@ -645,14 +658,129 @@
     render();
   }
   function smileOf(day) {
-    const x = [], y = [];
+    const ks = [], iv = [];
     for (let i = 0; i < day.ks.length; i++) {
       if (typeof day.iv[i] === 'number' && Number.isFinite(day.iv[i])) {
-        x.push(day.ks[i]);
-        y.push(day.iv[i] * 100);
+        ks.push(day.ks[i]);
+        iv.push(day.iv[i]);
       }
     }
-    return { x, y };
+    if (ks.length < 3) return { x: ks, y: iv.map((v) => v * 100) };
+    const smooth = F.smoothVol(ks, iv, 180);
+    return { x: smooth.x, y: smooth.y.map((v) => v * 100) };
+  }
+  function displaySmile(s) {
+    const work = s && s._shock ? s : F.materialize(s);
+    const fwd = F.forward(work);
+    const grid = work.quoteGrid;
+    if (grid && grid.length >= 3) {
+      const ks = [], iv = [];
+      for (let i = 0; i < grid.length; i++) {
+        if (Number.isFinite(grid[i].k) && Number.isFinite(grid[i].iv)) {
+          ks.push(grid[i].k);
+          iv.push(grid[i].iv);
+        }
+      }
+      if (ks.length >= 3) {
+        const smooth = F.smoothVol(ks, iv, 180);
+        const rows = [];
+        for (let i = 0; i < smooth.x.length; i++) {
+          if (!Number.isFinite(smooth.y[i])) continue;
+          rows.push({ k: smooth.x[i], K: fwd * Math.exp(smooth.x[i]), iv: smooth.y[i] });
+        }
+        return rows;
+      }
+    }
+    const ks = F.linspace(-0.28, 0.18, 160);
+    return ks.map((k) => {
+      const K = fwd * Math.exp(k);
+      return { k, K, iv: F.ivAt(work, K).iv };
+    }).filter((p) => Number.isFinite(p.iv));
+  }
+  function displayDelta(s) {
+    const work = s && s._shock ? s : F.materialize(s);
+    return displaySmile(work).map((p) => {
+      const type = p.k < 0 ? 'put' : 'call';
+      return { k: p.k, K: p.K, iv: p.iv, delta: F.signedDeltaWith(work, p.K, type, p.iv) };
+    }).filter((p) => Number.isFinite(p.delta) && Number.isFinite(p.iv));
+  }
+  function seriesKnot(x, y, x0, y0) {
+    const xs = x.slice();
+    const ys = y.slice();
+    if (Number.isFinite(x0) && Number.isFinite(y0)) {
+      xs.push(x0);
+      ys.push(y0);
+    }
+    return { x: xs, y: ys };
+  }
+  function legText(name, K, iv) {
+    const strike = Number.isFinite(K) ? Math.round(K).toString() : '—';
+    const vol = Number.isFinite(iv) ? (iv * 100).toFixed(2) : '—';
+    return name + ' ' + strike + ' · ' + vol;
+  }
+  function flyCallouts(view, liveState, xOf) {
+    const q = view.quotes || {};
+    const w = view.wings || {};
+    const fwd = F.forward(liveState);
+    const marks = F.brokerMarks(liveState);
+    const m25 = marks.filter((m) => Math.abs(m.delta - 0.25) < 1e-9)[0];
+    const m10 = marks.filter((m) => Math.abs(m.delta - 0.10) < 1e-9)[0];
+    const items = [
+      { name: 'Raw', fly: q.raw, K: w.Kc, color: '#2dd4bf', legs: w.ordered ? [legText('L', w.Kl, w.ivL), legText('C', w.Kc, w.ivC), legText('U', w.Ku, w.ivU)].join(' · ') : '' },
+      { name: '25Δ', fly: q.d25, K: m25 ? m25.Kc : fwd, color: '#f59e0b', legs: m25 ? [legText('L', m25.Kl, m25.ivL), legText('C', m25.Kc, m25.ivC), legText('U', m25.Ku, m25.ivU), 'RR ' + (m25.rr * 100).toFixed(2)].join(' · ') : '' },
+      { name: '10Δ', fly: q.d10, K: m10 ? m10.Kc : fwd, color: '#f472b6', legs: m10 ? [legText('L', m10.Kl, m10.ivL), legText('C', m10.Kc, m10.ivC), legText('U', m10.Ku, m10.ivU), 'RR ' + (m10.rr * 100).toFixed(2)].join(' · ') : '' },
+      { name: 'ATM', fly: q.atm, K: fwd, color: '#e6edf7', legs: '' },
+      { name: 'Fwd Δ', fly: q.dn, K: fwd, color: '#a78bfa', legs: '' }
+    ];
+    const out = { x: [], y: [], text: [], pos: [], color: [], hover: [] };
+    const used = [];
+    items.forEach((item) => {
+      if (!Number.isFinite(item.fly) || !Number.isFinite(item.K)) return;
+      const hit = used.filter((u) => Math.abs(u.K - item.K) < Math.max(1, Math.abs(item.K) * 1e-4) && Math.abs(u.fly - item.fly) < 1e-5)[0];
+      if (hit) {
+        hit.names.push(item.name);
+        if (item.legs) hit.legs = item.legs;
+        return;
+      }
+      used.push({ K: item.K, fly: item.fly, names: [item.name], color: item.color, legs: item.legs || '' });
+    });
+    used.forEach((item, i) => {
+      const bf = (item.fly * 100).toFixed(2);
+      out.x.push(xOf(item.K));
+      out.y.push(item.fly * 100);
+      out.text.push(item.names.join(' · ') + ' ' + bf);
+      out.pos.push(i % 2 ? 'bottom center' : 'top center');
+      out.color.push(item.color);
+      out.hover.push(item.names.join(' · ') + ' ' + bf + ' vol pts' + (item.legs ? '<br>' + item.legs : ''));
+    });
+    return out;
+  }
+  function flyLegShapes(view, xOf) {
+    const w = view.wings;
+    if (!w || !w.ordered) return { shapes: [], annotations: [] };
+    const legs = [
+      { name: 'Lower', K: w.Kl, iv: w.ivL },
+      { name: 'Body', K: w.Kc, iv: w.ivC },
+      { name: 'Upper', K: w.Ku, iv: w.ivU }
+    ];
+    const shapes = [];
+    const annotations = [];
+    legs.forEach((leg) => {
+      if (!Number.isFinite(leg.K)) return;
+      const x = xOf(leg.K);
+      shapes.push({
+        type: 'line', xref: 'x', yref: 'paper',
+        x0: x, x1: x, y0: 0, y1: 1,
+        line: { color: 'rgba(148,163,184,0.55)', width: 1, dash: 'dot' }
+      });
+      annotations.push({
+        x: x, y: 1, yref: 'paper', text: legText(leg.name, leg.K, leg.iv),
+        showarrow: false, yanchor: 'top', yshift: -2,
+        font: { color: '#94a3b8', size: 10 },
+        bgcolor: 'rgba(11,14,20,0.8)'
+      });
+    });
+    return { shapes, annotations };
   }
   function flyOfK(s) {
     const rows = F.flyCurve(s);
@@ -669,14 +797,17 @@
       const compared = compareItems().filter((item) => item.day.date !== state.asOf);
       const useK = compared.length > 0;
       const fwd = F.forward(state);
-      const xs = s.rows.map((r) => useK ? r.k : r.K);
+      const live = displaySmile(state);
+      const baseSmile = displaySmile(F.materialize(state, F.zeroShocks()));
+      const xs = live.map((r) => useK ? r.k : r.K);
+      const fitX = s.rows.map((r) => useK ? r.k : r.K);
       const traces = [
-        line(state.asOf || 'This session', xs, s.rows.map((r) => r.market * 100), '#e6edf7'),
-        line('Baseline', xs, s.rows.map((r) => r.baseline * 100), '#8b95a8', 'dot'),
-        line('Quadratic smooth (bump off)', xs, s.quadratic.map((v) => v * 100), '#2dd4bf', 'dash')
+        line(state.asOf || 'This session', xs, live.map((r) => r.iv * 100), '#e6edf7'),
+        line('Baseline', baseSmile.map((r) => useK ? r.k : r.K), baseSmile.map((r) => r.iv * 100), '#8b95a8', 'dot'),
+        line('Quadratic smooth (bump off)', fitX, s.quadratic.map((v) => v * 100), '#2dd4bf', 'dash')
       ];
-      if (s.svi.ok) traces.push(line('SVI fit', xs, s.rows.map((r) => s.svi.iv(r.k) * 100), '#f59e0b'));
-      if (s.ssvi.ok) traces.push(line('SSVI fit', xs, s.rows.map((r) => s.ssvi.iv(r.k) * 100), '#a78bfa'));
+      if (s.svi.ok) traces.push(line('SVI fit', xs, live.map((r) => s.svi.iv(r.k) * 100), '#f59e0b'));
+      if (s.ssvi.ok) traces.push(line('SSVI fit', xs, live.map((r) => s.ssvi.iv(r.k) * 100), '#a78bfa'));
       compared.forEach((item, i) => {
         const sm = smileOf(item.day);
         traces.push(line(item.day.date + (item.warmup ? ' warm-up' : ''), sm.x, sm.y, DAY_COLORS[i % DAY_COLORS.length], 'dash'));
@@ -700,17 +831,17 @@
       });
       draw(traces, smileLay,
         (useK ? 'Checked days share log-moneyness, so a different spot does not shift the smile. Dashed curves are the other sessions. ' : '') +
-        'The red chord joins the 10Δ or 25Δ put to the matching call. BF is the vol-point gap from that chord down to the center. RR is call-wing vol minus put-wing vol. These are smile quotes, not the package debit. |k|>0.30 is outside the quoted grid.',
+        'The session curve is a smooth pass through the listed strikes. The red chord joins the 10Δ or 25Δ put to the matching call. BF is the vol-point gap from that chord down to the center. RR is call-wing vol minus put-wing vol. These are smile quotes, not the package debit. |k|>0.30 is outside the quoted grid.',
         xs.map((x, i) => [x, s.rows[i].market, s.rows[i].baseline]));
     } else if (chartId === 'delta') {
-      const rows = F.deltaSmile(state);
+      const rows = displayDelta(state);
       const traces = [
         line(state.asOf || 'This session', rows.map((r) => r.delta), rows.map((r) => r.iv * 100), '#e6edf7')
       ];
       compareItems().filter((item) => item.day.date !== state.asOf).forEach((item, i) => {
         const other = F.stateFromDay(item.day);
         other.deltaConv = state.deltaConv;
-        const alt = F.deltaSmile(other);
+        const alt = displayDelta(other);
         traces.push(line(item.day.date, alt.map((r) => r.delta), alt.map((r) => r.iv * 100), DAY_COLORS[i % DAY_COLORS.length], 'dash'));
       });
       const deltaLay = layout('Implied volatility vs ' + state.deltaConv + ' delta', 'IV (vol points)', 'Signed delta (put < 0 < call)');
@@ -721,10 +852,10 @@
     } else if (chartId === 'flyK') {
       const rows = F.flySweepStrike(state, history).filter((r) => r.ordered);
       draw([
-        line('Raw IV fly', rows.map((r) => r.K), rows.map((r) => r.fly * 100), '#3d9cf0'),
-        line('Historical median', rows.map((r) => r.K), rows.map((r) => r.fair * 100), '#22c55e', 'dash'),
-        line('SVI fly', rows.map((r) => r.K), rows.map((r) => r.svi * 100), '#f59e0b', 'dot'),
-        line('Robust z', rows.map((r) => r.K), rows.map((r) => r.z), '#fca5a5')
+        smoothLine('Raw IV fly', rows.map((r) => r.K), rows.map((r) => r.fly * 100), '#3d9cf0'),
+        smoothLine('Historical median', rows.map((r) => r.K), rows.map((r) => r.fair * 100), '#22c55e', 'dash'),
+        smoothLine('SVI fly', rows.map((r) => r.K), rows.map((r) => r.svi * 100), '#f59e0b', 'dot'),
+        smoothLine('Robust z', rows.map((r) => r.K), rows.map((r) => r.z), '#fca5a5')
       ], layout('IV fly vs center strike', 'Vol points (z on the right scale is unitless — read the hover)', 'Center strike'),
         'Wings follow the selected wing mode. Unordered centers are omitted. z uses the causal one-year sample at that center’s log-moneyness.',
         rows.map((r) => [r.K, r.fly, r.fair, r.z]));
@@ -733,28 +864,28 @@
       const puts = rows.filter((r) => r.side === 'put');
       const calls = rows.filter((r) => r.side === 'call');
       draw([
-        line('Put-center fly', puts.map((r) => r.delta), puts.map((r) => r.fly * 100), '#7dd3fc'),
-        line('Call-center fly', calls.map((r) => r.delta), calls.map((r) => r.fly * 100), '#fca5a5')
+        smoothLine('Put-center fly', puts.map((r) => r.delta), puts.map((r) => r.fly * 100), '#7dd3fc'),
+        smoothLine('Call-center fly', calls.map((r) => r.delta), calls.map((r) => r.fly * 100), '#fca5a5')
       ], layout('IV fly vs center delta', 'IV fly (vol points)', 'Signed center delta'),
         'Fixed-delta wings can cross the center; those points are dropped rather than redrawn.',
         rows.map((r) => [r.delta, r.fly, r.K]));
     } else if (chartId === 'width') {
       const rows = F.flySweepWidth(state).filter((r) => r.ordered);
       draw([
-        line('Raw IV fly (vol pts)', rows.map((r) => r.width), rows.map((r) => r.fly * 100), '#3d9cf0'),
-        line('Fly / Δk', rows.map((r) => r.width), rows.map((r) => r.flyPerK * 100), '#2dd4bf'),
-        line('Price fly', rows.map((r) => r.width), rows.map((r) => r.price), '#f59e0b'),
-        line('Smooth model fly (vol pts)', rows.map((r) => r.width), rows.map((r) => r.model * 100), '#a78bfa', 'dash')
+        smoothLine('Raw IV fly (vol pts)', rows.map((r) => r.width), rows.map((r) => r.fly * 100), '#3d9cf0'),
+        smoothLine('Fly / Δk', rows.map((r) => r.width), rows.map((r) => r.flyPerK * 100), '#2dd4bf'),
+        smoothLine('Price fly', rows.map((r) => r.width), rows.map((r) => r.price), '#f59e0b'),
+        smoothLine('Smooth model fly (vol pts)', rows.map((r) => r.width), rows.map((r) => r.model * 100), '#a78bfa', 'dash')
       ], layout('Fly vs wing width', 'Mixed units — see legend', state.wingMode + ' width'),
         'Raw curvature, curvature per unit log-moneyness, and the option-price fly are different objects. They share an x-axis only.',
         rows.map((r) => [r.width, r.fly, r.price, r.model]));
     } else if (chartId === 'price') {
       const pack = F.priceFlySweep(state);
-      const traces = ['fixed', 'shift', 'log', 'delta'].map((m, i) => line(
+      const traces = ['fixed', 'shift', 'log', 'delta'].map((m, i) => smoothLine(
         m, pack.bySpot[m].map((r) => r.S), pack.bySpot[m].map((r) => r.price),
         ['#e6edf7', '#3d9cf0', '#2dd4bf', '#f59e0b'][i]
       ));
-      traces.push(line('Vs center strike (top axis not shared)', pack.byCenter.map((r) => r.K), pack.byCenter.map((r) => r.price), '#fca5a5', 'dot'));
+      traces.push(smoothLine('Vs center strike (top axis not shared)', pack.byCenter.map((r) => r.K), pack.byCenter.map((r) => r.price), '#fca5a5', 'dot'));
       draw(traces, layout('Option-price fly', 'Normalized price fly (index points)', 'Spot, or strike for the dotted curve'),
         pack.note + ' The dotted curve’s x-axis is center strike, not spot.',
         pack.bySpot.fixed.map((r, i) => [r.S, r.price, pack.bySpot.log[i].price, pack.bySpot.delta[i].price]));
@@ -772,10 +903,10 @@
       const g = F.greekSeries(state);
       const which = document.getElementById('greekName').value;
       draw([
-        line('Package', g.vsSpot.map((r) => r.S), g.vsSpot.map((r) => r.sum[which]), '#e6edf7'),
-        line('Lower', g.vsSpot.map((r) => r.S), g.vsSpot.map((r) => r.legs[0][which]), '#7dd3fc'),
-        line('Body', g.vsSpot.map((r) => r.S), g.vsSpot.map((r) => r.legs[1][which]), '#f59e0b'),
-        line('Upper', g.vsSpot.map((r) => r.S), g.vsSpot.map((r) => r.legs[2][which]), '#fca5a5')
+        smoothLine('Package', g.vsSpot.map((r) => r.S), g.vsSpot.map((r) => r.sum[which]), '#e6edf7'),
+        smoothLine('Lower', g.vsSpot.map((r) => r.S), g.vsSpot.map((r) => r.legs[0][which]), '#7dd3fc'),
+        smoothLine('Body', g.vsSpot.map((r) => r.S), g.vsSpot.map((r) => r.legs[1][which]), '#f59e0b'),
+        smoothLine('Upper', g.vsSpot.map((r) => r.S), g.vsSpot.map((r) => r.legs[2][which]), '#fca5a5')
       ], layout(which + ' vs spot, strikes held at the scenario wings', which, 'Spot'),
         'Analytical BSM Greeks hold each leg’s IV fixed. Smile delta in the table is the finite difference when IV is allowed to move with the sticky rule. Vega is per 1.00 vol; divide by 100 for one vol point. Theta is per year.',
         g.vsSpot.map((r) => [r.S, r.sum[which]]));
@@ -1009,9 +1140,13 @@
     ];
     const compared = compareItems().filter((item) => item.day.date !== state.asOf);
     const useK = compared.length > 0;
+    const fwd = F.forward(liveState);
+    const xOf = (K) => useK && K > 0 ? Math.log(K / fwd) : K;
     const liveRows = F.flyCurve(liveState);
-    const liveK = useK ? flyOfK(liveState) : null;
-    const traces = [line(state.asOf || 'This session', useK ? liveK.x : liveRows.map((r) => r.K), useK ? liveK.y : liveRows.map((r) => r.fly * 100), '#e6edf7')];
+    const liveX = useK ? flyOfK(liveState).x : liveRows.map((r) => r.K);
+    const liveY = useK ? flyOfK(liveState).y : liveRows.map((r) => r.fly * 100);
+    const pinnedLive = seriesKnot(liveX, liveY, view.wings && xOf(view.wings.Kc), Number.isFinite(q.raw) ? q.raw * 100 : NaN);
+    const traces = [smoothLine(state.asOf || 'This session', pinnedLive.x, pinnedLive.y, '#e6edf7')];
     function rawOf(s) {
       return F.ivFlyOf(F.resolveWings(F.materialize(s)));
     }
@@ -1020,14 +1155,14 @@
       chips.push(flyChip('vs dials off', signedPts(d)));
       const rows = useK ? flyOfK(baseState) : null;
       const raw = F.flyCurve(baseState);
-      traces.push(line('Before dials', useK ? rows.x : raw.map((r) => r.K), useK ? rows.y : raw.map((r) => r.fly * 100), '#8b95a8', 'dash'));
+      traces.push(smoothLine('Before dials', useK ? rows.x : raw.map((r) => r.K), useK ? rows.y : raw.map((r) => r.fly * 100), '#8b95a8', 'dash'));
     }
     if (pinState) {
       const d = (q.raw - rawOf(pinState)) * 100;
       chips.push(flyChip('vs pin', signedPts(d)));
       const rows = useK ? flyOfK(pinState) : null;
       const raw = F.flyCurve(pinState);
-      traces.push(line('Pinned', useK ? rows.x : raw.map((r) => r.K), useK ? rows.y : raw.map((r) => r.fly * 100), '#f59e0b', 'dash'));
+      traces.push(smoothLine('Pinned', useK ? rows.x : raw.map((r) => r.K), useK ? rows.y : raw.map((r) => r.fly * 100), '#f59e0b', 'dash'));
     }
     compared.forEach((item, i) => {
       const other = F.stateFromDay(item.day);
@@ -1043,14 +1178,18 @@
       other.wingDelta = state.wingDelta;
       other.deltaConv = state.deltaConv;
       const rows = flyOfK(other);
-      traces.push(line(item.day.date, rows.x, rows.y, DAY_COLORS[i % DAY_COLORS.length], 'dash'));
+      traces.push(smoothLine(item.day.date, rows.x, rows.y, DAY_COLORS[i % DAY_COLORS.length], 'dash'));
     });
-    if (view.wings && Number.isFinite(view.wings.Kc) && Number.isFinite(q.raw)) {
-      const fwd = F.forward(liveState);
+    const callouts = flyCallouts(view, liveState, xOf);
+    if (callouts.x.length) {
       traces.push({
-        type: 'scatter', mode: 'markers', name: 'This center',
-        x: [useK ? Math.log(view.wings.Kc / fwd) : view.wings.Kc], y: [q.raw * 100],
-        marker: { size: 11, color: '#2dd4bf' }
+        type: 'scatter', mode: 'markers+text', name: 'Quoted flies',
+        x: callouts.x, y: callouts.y, text: callouts.text,
+        textposition: callouts.pos,
+        textfont: { size: 10, color: '#e6edf7' },
+        marker: { size: 10, color: callouts.color },
+        customdata: callouts.hover,
+        hovertemplate: '%{customdata}<extra></extra>'
       });
     }
     host.innerHTML = chips.join('');
@@ -1059,8 +1198,11 @@
       return;
     }
     const lay = layout(useK ? 'IV fly vs log-moneyness' : 'IV fly vs center strike', 'IV fly (vol points)', useK ? 'Center k = ln(K/F)' : 'Center strike');
-    lay.height = 240;
-    lay.margin = { l: 56, r: 12, t: 28, b: 40 };
+    const legs = flyLegShapes(view, xOf);
+    lay.shapes = legs.shapes;
+    lay.annotations = legs.annotations;
+    lay.height = 320;
+    lay.margin = { l: 56, r: 16, t: 36, b: 40 };
     lay.title.font.size = 12;
     lay.uirevision = 'fly-strip';
     const ys = [];

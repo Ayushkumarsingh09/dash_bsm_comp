@@ -513,6 +513,27 @@
       assert(syn.synthetic !== false && syn.days.length === 252, 'synthetic cache');
     });
 
+    test('a smooth curve passes through every listed vol', () => {
+      const ks = [-0.08, -0.04, 0, 0.04, 0.08];
+      const iv = [0.22, 0.18, 0.16, 0.15, 0.145];
+      const s = F.smoothVol(ks, iv, 40);
+      ks.forEach((k, i) => {
+        let best = NaN;
+        let gap = 1;
+        for (let j = 0; j < s.x.length; j++) {
+          const d = Math.abs(s.x[j] - k);
+          if (d < gap) { gap = d; best = s.y[j]; }
+        }
+        near(best, iv[i], 1e-9, 'knot ' + k);
+      });
+      const flat = F.smoothVol(ks, [0.2, 0.2, 0.2, 0.2, 0.2], 20);
+      flat.y.forEach((v) => near(v, 0.2, 1e-12, 'flat'));
+      const fly = F.smoothCurve([-2, 0, 2], [-0.02, 0.01, -0.01], 9);
+      near(fly.y[0], -0.02, 1e-12, 'left fly');
+      near(fly.y[fly.y.length - 1], -0.01, 1e-12, 'right fly');
+      assert(fly.y.every((v) => Number.isFinite(v)), 'finite');
+    });
+
     return results;
   }
 
