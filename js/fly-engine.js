@@ -519,7 +519,20 @@
     return n;
   }
 
+  function stickyLive(s) {
+    if (!s.quoteGrid || !s.stickyMarks) return false;
+    const z = s._shock;
+    if (z && (z.dS || z.dr || z.dq || z.dDays)) return false;
+    return true;
+  }
+
   function quoteFly(s, delta) {
+    if (stickyLive(s)) {
+      for (let i = 0; i < s.stickyMarks.length; i++) {
+        const m = s.stickyMarks[i];
+        if (Math.abs(m.delta - delta) < 1e-6 && isNum(m.bf)) return { fly: m.bf, wings: m };
+      }
+    }
     const atm = withPatches(s, { centerMode: 'strike', centerK: forward(s), wingMode: 'delta', wingDelta: delta, quoteGrid: s.quoteGrid });
     if (s._pin) atm._pin = s._pin;
     const w = resolveWings(atm);
@@ -975,7 +988,8 @@
       quoteGrid: day.ks.map((k, i) => ({ k, iv: day.iv[i], stale: !!day.stale[i] })).filter((p) => isNum(p.iv)),
       centerMode: 'strike',
       centerK: day.S * Math.exp((day.r - day.q) * day.T),
-      shocks: zeroShocks()
+      shocks: zeroShocks(),
+      stickyMarks: day.stickyMarks || null
     });
     s.quoteGrid.T = day.T;
     ensureT(s);
@@ -1019,6 +1033,31 @@
     };
   }
 
+  function stickyMarksOf(raw, S) {
+    if (!raw || !raw.length || !(S > 0)) return null;
+    const out = [];
+    for (let i = 0; i < raw.length; i++) {
+      const m = raw[i];
+      if (!isNum(m.Kl) || !isNum(m.Kc) || !isNum(m.Ku) || !isNum(m.ivL) || !isNum(m.ivC) || !isNum(m.ivU)) continue;
+      if (!(m.Kl > 0 && m.Kc > 0 && m.Ku > 0)) continue;
+      out.push({
+        delta: m.delta,
+        label: Math.round(m.delta * 100) + 'Δ',
+        Kl: m.Kl, Kc: m.Kc, Ku: m.Ku,
+        ivL: m.ivL, ivC: m.ivC, ivU: m.ivU,
+        bf: isNum(m.bf) ? m.bf : 0.5 * (m.ivL + m.ivU) - m.ivC,
+        rr: isNum(m.rr) ? m.rr : m.ivU - m.ivL,
+        putDelta: -Math.abs(m.delta),
+        callDelta: Math.abs(m.delta),
+        kL: Math.log(m.Kl / S),
+        kC: Math.log(m.Kc / S),
+        kU: Math.log(m.Ku / S),
+        ordered: m.Kl < m.Kc && m.Kc < m.Ku
+      });
+    }
+    return out.length ? out : null;
+  }
+
   function ingestMarketHistory(payload) {
     const ks = payload && payload.kGrid && payload.kGrid.length ? payload.kGrid.slice() : kGrid();
     const sessions = payload && payload.sessions ? payload.sessions.slice() : [];
@@ -1050,7 +1089,8 @@
         calendarBreaks: s.calendarBreaks || 0,
         source: 'market',
         dteLo: s.dteLo, dteHi: s.dteHi,
-        rateSource: s.rateSource || 'parity'
+        rateSource: s.rateSource || 'parity',
+        stickyMarks: stickyMarksOf(s.marks, s.S)
       };
     });
     const warmupN = rows.length > WARMUP_DAYS + 30 ? WARMUP_DAYS : Math.min(WARMUP_DAYS, Math.max(0, rows.length - 30));
@@ -1062,7 +1102,6 @@
     const history = {
       version: VERSION,
       synthetic: false,
-      seed: 'snp-' + last,
       end: last,
       start: rows.length ? rows[0].date : '',
       valuationDays: days.length,
@@ -1071,7 +1110,11 @@
       targetDTE: 60,
       dayCount: 365,
       family: (payload && payload.family) || 'OWSNP',
-      label: 'REAL listed SNP weeklies (OWSNP), ' + (days[0] ? days[0].date : '') + ' to ' + last +
+      seed: ((payload && payload.family) || 'snp') + '-' + last,
+      label: (payload && payload.family === 'sticky-delta' && payload.label)
+        ? payload.label + ' ' + (days[0] ? days[0].date : '') + ' to ' + last + '. ' + days.length +
+          ' valuation sessions after ' + warmup.length + ' warm-up sessions. Not mixed with the other books.'
+        : 'REAL listed SNP weeklies (OWSNP), ' + (days[0] ? days[0].date : '') + ' to ' + last +
         '. Constant 60 DTE. ' + days.length + ' valuation sessions after ' + warmup.length +
         ' warm-up sessions. Not the synthetic sample.',
       ratesNote: (payload && payload.ratesNote) || '',
@@ -2045,6 +2088,16 @@
 
   function brokerMarks(state) {
     const s = materialize(state);
+    if (stickyLive(s)) {
+      const stored = [];
+      for (const delta of [0.25, 0.10]) {
+        for (let i = 0; i < s.stickyMarks.length; i++) {
+          const m = s.stickyMarks[i];
+          if (Math.abs(m.delta - delta) < 1e-6 && isNum(m.ivL) && isNum(m.ivC) && isNum(m.ivU)) stored.push(m);
+        }
+      }
+      if (stored.length) return stored;
+    }
     const marks = [];
     for (const delta of [0.25, 0.10]) {
       const q = quoteFly(s, delta);

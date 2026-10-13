@@ -2,6 +2,7 @@
   const F = window.FLY;
   let history = F.getHistory();
   let realHistory = null;
+  let stickyHistory = null;
   let bookId = 'synthetic';
   let bookToken = 0;
   let compareSet = [];
@@ -1389,20 +1390,24 @@
     else if (dir < 0 && history.warmup.length) openSession(history.warmup.length - 1, true);
   }
   function bookNoteText() {
-    if (bookId !== 'real') return 'Synthetic 252-day study. The listed chains are not mixed into it.';
+    if (bookId === 'synthetic') return 'Synthetic 252-day study. The listed chains are not mixed into it.';
     const day = history.days[history.days.length - 1];
-    const tenors = day && day.dteLo != null ? ' Last session blends the ' + day.dteLo + '-day and ' + day.dteHi + '-day expiries.' : '';
+    const tenors = day && day.dteLo != null ? ' Last session uses the ' + day.dteLo + '-day and ' + day.dteHi + '-day expiries.' : '';
     return (history.ratesNote || '') + ' ' + (history.interpolation || '') + tenors;
   }
   function setBookButtons() {
     const syn = document.getElementById('bookSyn');
     const real = document.getElementById('bookReal');
+    const sticky = document.getElementById('bookSticky');
     if (syn) syn.classList.toggle('active', bookId === 'synthetic');
     if (real) real.classList.toggle('active', bookId === 'real');
+    if (sticky) sticky.classList.toggle('active', bookId === 'sticky');
     const navFly = document.querySelector('.nav a[href="fly.html"]');
     const navReal = document.getElementById('navReal');
-    if (navFly) navFly.classList.toggle('active', bookId !== 'real');
+    const navSticky = document.getElementById('navSticky');
+    if (navFly) navFly.classList.toggle('active', bookId === 'synthetic');
     if (navReal) navReal.classList.toggle('active', bookId === 'real');
+    if (navSticky) navSticky.classList.toggle('active', bookId === 'sticky');
   }
   function applyBook(next, id) {
     history = next;
@@ -1419,6 +1424,7 @@
     state = F.linkToFinal(F.defaultState(), history);
     Object.assign(state, keep);
     if (state.centerMode === 'strike') state.centerK = F.forward(state);
+    if (id === 'sticky') state.deltaConv = 'forward';
     state.greekDials = F.zeroGreekDials();
     state.source = history.synthetic === false ? 'market' : 'synthetic';
     const note = document.getElementById('bookNote');
@@ -1447,8 +1453,29 @@
       if (note) note.textContent = 'The real chain file did not load. The synthetic study is still available.';
     });
   }
+  function useSticky() {
+    const token = ++bookToken;
+    const note = document.getElementById('bookNote');
+    if (stickyHistory) {
+      applyBook(stickyHistory, 'sticky');
+      return;
+    }
+    if (note) note.textContent = 'Joining the sticky-delta workbook to the listed chains…';
+    fetch('data/sticky-60d.json').then((res) => {
+      if (!res.ok) throw new Error('missing');
+      return res.json();
+    }).then((payload) => {
+      if (token !== bookToken) return;
+      stickyHistory = F.ingestMarketHistory(payload);
+      applyBook(stickyHistory, 'sticky');
+    }).catch(() => {
+      if (token !== bookToken) return;
+      if (note) note.textContent = 'The sticky-delta book did not load. The other studies are still available.';
+    });
+  }
   function syncBook() {
     if (location.hash === '#real') useReal();
+    else if (location.hash === '#sticky') useSticky();
     else if (bookId !== 'synthetic') applyBook(F.getHistory(), 'synthetic');
     else {
       const note = document.getElementById('bookNote');
@@ -1469,6 +1496,10 @@
   document.getElementById('bookReal').onclick = () => {
     if (location.hash !== '#real') location.hash = 'real';
     else useReal();
+  };
+  document.getElementById('bookSticky').onclick = () => {
+    if (location.hash !== '#sticky') location.hash = 'sticky';
+    else useSticky();
   };
   window.addEventListener('hashchange', syncBook);
   syncBook();

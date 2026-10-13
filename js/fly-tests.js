@@ -481,6 +481,38 @@
       assert(smile.histMean.length > 0 && smile.histMean.every((v) => Number.isFinite(v)), 'pca');
     });
 
+    test('sticky-delta marks are the butterfly and risk reversal', () => {
+      const ks = F.kGrid();
+      const sessions = [];
+      let S = 5000;
+      for (let i = 0; i < 80; i++) {
+        S *= 1.001;
+        const iv = ks.map((k) => (Math.abs(k) <= 0.08 + 1e-9 ? 0.2 + Math.max(-k, 0) * 0.3 : null));
+        sessions.push({
+          date: '2024-05-' + String(i).padStart(2, '0'),
+          S, r: 0, q: 0, iv,
+          stale: iv.map((v) => (v == null ? 1 : 0)),
+          dteLo: 55, dteHi: 73, termSlope: 0, calendarBreaks: 0,
+          marks: [{
+            delta: 0.25, Kl: S * 0.96, Kc: S, Ku: S * 1.04,
+            ivL: 0.22, ivC: 0.20, ivU: 0.18, bf: 0, rr: -0.04
+          }]
+        });
+      }
+      const h = F.ingestMarketHistory({
+        sessions, kGrid: ks, family: 'sticky-delta', label: 'Sticky test',
+        ratesNote: 'zero', interpolation: 'named contracts'
+      });
+      const day = h.days[h.days.length - 1];
+      near(day.fly25, 0, 1e-12, 'file butterfly');
+      const s = F.linkToFinal(F.defaultState(), h);
+      const marks = F.brokerMarks(s);
+      assert(marks.length === 1 && Math.abs(marks[0].delta - 0.25) < 1e-9, 'stored 25 delta');
+      near(marks[0].rr, -0.04, 1e-12, 'file risk reversal');
+      const syn = F.getHistory();
+      assert(syn.synthetic !== false && syn.days.length === 252, 'synthetic cache');
+    });
+
     return results;
   }
 
