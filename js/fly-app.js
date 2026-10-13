@@ -832,7 +832,7 @@
       draw(traces, smileLay,
         (useK ? 'Checked days share log-moneyness, so a different spot does not shift the smile. Dashed curves are the other sessions. ' : '') +
         'The session curve is a smooth pass through the listed strikes. The red chord joins the 10Δ or 25Δ put to the matching call. BF is the vol-point gap from that chord down to the center. RR is call-wing vol minus put-wing vol. These are smile quotes, not the package debit. |k|>0.30 is outside the quoted grid.',
-        xs.map((x, i) => [x, s.rows[i].market, s.rows[i].baseline]));
+        live.map((r, i) => [useK ? r.k : r.K, r.iv, baseSmile[i] ? baseSmile[i].iv : null]));
     } else if (chartId === 'delta') {
       const rows = displayDelta(state);
       const traces = [
@@ -1378,15 +1378,30 @@
       showBottom(b);
     };
     renderDayBar();
-    paintCharts(view);
+    try {
+      paintCharts(view);
+    } catch (err) {
+      const el = document.getElementById('chart');
+      if (el) el.innerHTML = '<p class="warn-line">Chart error: ' + esc(err.message) + '</p>';
+      console.error(err);
+    }
     renderDialFit(liveFit);
-    drawFlyPanel(view, liveBook, liveFit ? state : null, pinnedState ? pinBookState : null);
+    try {
+      drawFlyPanel(view, liveBook, liveFit ? state : null, pinnedState ? pinBookState : null);
+    } catch (err) {
+      const el = document.getElementById('flyChart');
+      if (el) el.innerHTML = '<p class="warn-line">Fly chart error: ' + esc(err.message) + '</p>';
+      console.error(err);
+    }
     if (liveFit && liveFit.active) {
       const note = document.getElementById('chartNote');
       if (note) note.textContent = 'Greek dials solved the book: ' + liveFit.drivers.join(', ') + '. ' + note.textContent;
     }
   } catch (err) {
-    document.getElementById('chartNote').textContent = 'Calculation error: ' + err.message;
+    const note = document.getElementById('chartNote');
+    if (note) note.textContent = 'Calculation error: ' + err.message;
+    const el = document.getElementById('chart');
+    if (el) el.innerHTML = '<p class="warn-line">Calculation error: ' + esc(err.message) + '</p>';
     console.error(err);
   }
   }
