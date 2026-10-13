@@ -1015,54 +1015,108 @@
     }
     return t;
   }
+  function asBefore(trace) {
+    const t = JSON.parse(JSON.stringify(trace));
+    t.name = 'Before · ' + (trace.name || 'series');
+    if (t.type === 'heatmap') {
+      t.type = 'contour';
+      t.showscale = false;
+      delete t.colorscale;
+      delete t.reversescale;
+      t.contours = { coloring: 'none', showlabels: false };
+      t.line = { color: '#8b95a8', width: 1.2 };
+      return t;
+    }
+    if (t.type === 'bar') {
+      t.marker = Object.assign({}, t.marker || {}, { opacity: 0.35 });
+      t.opacity = 0.4;
+      return t;
+    }
+    const color = (t.line && t.line.color) || '#8b95a8';
+    t.line = Object.assign({}, t.line || {}, { color: color, dash: 'dash', width: 1.5 });
+    if (t.marker) {
+      const markColor = Array.isArray(trace.marker && trace.marker.color) ? trace.marker.color : color;
+      t.marker = {
+        size: Math.max(6, (t.marker.size || 9) - 2),
+        symbol: 'circle-open',
+        color: 'rgba(0,0,0,0)',
+        line: { width: 1.5, color: markColor }
+      };
+    }
+    return t;
+  }
+  function captureChart(book, view) {
+    const saved = state;
+    try {
+      state = book;
+      capture = {};
+      renderChart(view);
+      return {
+        traces: capture.traces || [],
+        lay: capture.lay,
+        note: capture.note || '',
+        csv: capture.csv
+      };
+    } finally {
+      state = saved;
+      capture = null;
+    }
+  }
   function paintCharts(liveView) {
     paintSerial += 1;
-    if (!pinnedState) {
-      renderChart(liveView);
-      setPinChrome('');
-      return;
-    }
+    const moved = liveFit && liveFit.active ? liveFit.state : null;
     if (chartId === 'gmix') {
-      renderChart(liveView);
+      const saved = state;
+      try {
+        if (moved) state = moved;
+        renderChart(liveView);
+      } finally {
+        state = saved;
+      }
+      if (!pinnedState) {
+        setPinChrome('');
+        return;
+      }
       const pinOnly = F.view(pinBookState || pinnedState, history);
-      const pinFly = selectedFly(pinOnly);
-      const liveFly = selectedFly(liveView);
-      const deltaPts = (liveFly - pinFly) * 100;
+      const deltaPts = (selectedFly(liveView) - selectedFly(pinOnly)) * 100;
       setPinChrome(Number.isFinite(deltaPts)
         ? 'IV fly ' + (deltaPts > 0 ? '+' : '') + deltaPts.toFixed(2) + ' vol pts vs pin'
         : '');
       return;
     }
-    const saved = state;
-    let pinView;
-    let pinCap;
-    try {
-      state = pinnedState;
-      capture = {};
-      pinView = F.view(pinBookState || pinnedState, history);
-      renderChart(pinView);
-      pinCap = capture;
-    } finally {
-      state = saved;
-      capture = null;
+    if (!pinnedState && !moved) {
+      renderChart(liveView);
+      setPinChrome('');
+      return;
     }
-    capture = {};
-    renderChart(liveView);
-    const liveCap = capture;
-    capture = null;
-    const traces = (liveCap.traces || []).concat((pinCap.traces || []).map(asPinned));
-    const lay = liveCap.lay;
-    if (traces.some((t) => t.type === 'bar')) lay.barmode = 'overlay';
-    draw(traces, lay,
-      'Dashed curves are the pinned parameters on this same chart. Solid curves follow the controls. ' + (liveCap.note || ''),
-      liveCap.csv);
-    const pinFly = selectedFly(pinView);
-    const liveFly = selectedFly(liveView);
-    const deltaPts = (liveFly - pinFly) * 100;
-    const delta = Number.isFinite(deltaPts)
+    const nowBook = moved || state;
+    const nowCap = captureChart(nowBook, liveView);
+    let traces = nowCap.traces.slice();
+    let note = nowCap.note || '';
+    if (moved) {
+      const beforeView = F.view(state, history);
+      const beforeCap = captureChart(state, beforeView);
+      traces = (beforeCap.traces || []).map(asBefore).concat(traces);
+      note = 'Dashed curves are the book before the Greek dials. Solid curves are the book after the dials. ' + note;
+    }
+    let pinView = null;
+    if (pinnedState) {
+      pinView = F.view(pinBookState || pinnedState, history);
+      const pinCap = captureChart(pinnedState, pinView);
+      traces = traces.concat((pinCap.traces || []).map(asPinned));
+      note = 'Amber dashes are the pinned book. ' + note;
+    }
+    const lay = nowCap.lay;
+    if (lay && traces.some((t) => t.type === 'bar')) lay.barmode = 'overlay';
+    draw(traces, lay, note, nowCap.csv);
+    if (!pinView) {
+      setPinChrome('');
+      return;
+    }
+    const deltaPts = (selectedFly(liveView) - selectedFly(pinView)) * 100;
+    setPinChrome(Number.isFinite(deltaPts)
       ? 'IV fly ' + (deltaPts > 0 ? '+' : '') + deltaPts.toFixed(2) + ' vol pts vs pin'
-      : '';
-    setPinChrome(delta);
+      : '');
   }
   function setPinChrome(delta) {
     const pinBtn = document.getElementById('pinBtn');
@@ -1090,7 +1144,8 @@
       return '<tr><td>' + esc(d.label) + '</td><td>' + F.fmt(fit.targets[d.key], 4) + '</td><td>' + F.fmt(fit.achieved[d.key], 4) + '</td><td>' + F.fmt(gap, 4) + '</td></tr>';
     }).join('');
     el.innerHTML = '<table><thead><tr><th>Greek</th><th>Asked</th><th>Got</th><th>Gap</th></tr></thead><tbody>' + rows +
-      '</tbody></table><p class="muted">' + esc((fit.drivers || []).join(' · ') || 'No move inside the caps.') + '</p>';
+      '</tbody></table><p class="muted">' + esc((fit.drivers || []).join(' · ') || 'No move inside the caps.') +
+      ' Dashed curves on every chart are the book before this move. Solid curves are the book after it.</p>';
   }
 
   function greekMixTable() {
@@ -1146,7 +1201,7 @@
     const liveX = useK ? flyOfK(liveState).x : liveRows.map((r) => r.K);
     const liveY = useK ? flyOfK(liveState).y : liveRows.map((r) => r.fly * 100);
     const pinnedLive = seriesKnot(liveX, liveY, view.wings && xOf(view.wings.Kc), Number.isFinite(q.raw) ? q.raw * 100 : NaN);
-    const traces = [smoothLine(state.asOf || 'This session', pinnedLive.x, pinnedLive.y, '#e6edf7')];
+    const traces = [smoothLine(baseState ? 'After dials' : (state.asOf || 'This session'), pinnedLive.x, pinnedLive.y, '#e6edf7')];
     function rawOf(s) {
       return F.ivFlyOf(F.resolveWings(F.materialize(s)));
     }
